@@ -30,8 +30,6 @@ from gensim.models import KeyedVectors
 from surprise import Dataset, Reader, NMF, SVD, accuracy
 from surprise.model_selection import train_test_split, GridSearchCV
 
-get_ipython().run_line_magic('matplotlib', 'inline')
-
 
 # In[2]:
 
