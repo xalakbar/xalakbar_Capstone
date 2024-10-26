@@ -1,7 +1,5 @@
-import os 
 import string
 import nltk
-import sqlite3
 import pandas as pd
 import numpy as np
 import gensim.downloader as gdl
@@ -9,6 +7,8 @@ from sklearn.preprocessing import StandardScaler
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from gensim.models import KeyedVectors
+from bookscout_rs import setup_database, insert_books_from_df, insert_ratings_from_df
+
 
 books = pd.read_csv('data/books_enriched.csv')
 ratings = pd.read_csv('data/ratings.csv')
@@ -76,66 +76,8 @@ scaled_embeddings = scaler.fit_transform(flat_embeddings)
 
 goodbooks['scaled_embeddings'] = list(scaled_embeddings)
 
-def setup_database():
-    conn = sqlite3.connect('bookscout.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS books (
-        work_id INTEGER PRIMARY KEY,
-        title TEXT,
-        authors TEXT,
-        genres TEXT,
-        embeddings BLOB
-    )
-    ''')
-    
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        username TEXT NOT NULL,
-        password_hash TEXT NOT NULL
-    )
-    ''')
-    
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS ratings (
-        rating INTEGER PRIMARY KEY,
-        user_id INTEGER,
-        work_id INTEGER,
-        FOREIGN KEY (work_id) REFERENCES books(work_id),
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
-    )
-    ''')
-    
-    conn.commit()
-    conn.close()
-
-def insert_books_from_df(df):
-    conn = sqlite3.connect('bookscout.db')
-    cursor = conn.cursor()
-    for _, row in df.iterrows():
-        # Convert embeddings to bytes for SQLite compatability.
-        embeddings = np.array(row['scaled_embeddings']).tobytes() if 'scaled_embeddings' in row else None
-        cursor.execute('''
-        INSERT OR IGNORE INTO books (work_id, title, authors, genres, embeddings) VALUES (?, ?, ?, ?, ?)
-        ''', (row['work_id'], row['title'], row['authors'], row['genres'], embeddings))
-    conn.commit()
-    conn.close()
-
-def insert_ratings_from_df(df):
-    conn = sqlite3.connect('bookscout.db')
-    cursor = conn.cursor()
-    for _, row in df.iterrows():
-        cursor.execute('''
-        INSERT OR IGNORE INTO ratings (user_id, work_id, rating) VALUES (?, ?, ?)
-        ''', (row['user_id'], row['work_id'], row['rating']))
-    conn.commit()
-    conn.close()    
-
-
 setup_database()
-insert_books_from_df(goodbooks[['work_id', 'title', 'authors', 'genres', 'scaled_embeddings']])
-insert_ratings_from_df(goodbooks[['user_id', 'work_id', 'rating']])
+insert_books_from_df(goodbooks)
+insert_ratings_from_df(goodbooks)
 
 print("Database setup and data insertion complete.")
