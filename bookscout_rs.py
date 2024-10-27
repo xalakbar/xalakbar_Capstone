@@ -234,7 +234,7 @@ def insert_user(username, password):
         cursor.execute("INSERT INTO users (user_id, username, password_hash) VALUES (?, ?, ?)",
                        (user_id, username, password_hash))
         conn.commit()
-        return True
+        return user_id
     except sqlite3.IntegrityError:
         return False
     finally:
