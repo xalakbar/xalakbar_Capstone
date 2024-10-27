@@ -4,6 +4,8 @@
 import os
 import pickle
 import sqlite3
+import uuid
+import hashlib
 import pandas as pd
 import numpy as np
 import hnswlib
@@ -16,9 +18,10 @@ def setup_database():
     CREATE TABLE IF NOT EXISTS books (
         work_id INTEGER PRIMARY KEY,
         title TEXT,
-        authors TEXT,
+        author TEXT,
         genres TEXT,
-        embeddings BLOB
+        embeddings BLOB,
+        image_url TEXT
     )
     ''')
     
@@ -50,7 +53,7 @@ def insert_books_from_df(df):
         # Convert embeddings to bytes for SQLite compatability.
         embeddings = np.array(row['scaled_embeddings']).tobytes() if 'scaled_embeddings' in row else None
         cursor.execute('''
-        INSERT OR IGNORE INTO books (work_id, title, authors, genres, embeddings) VALUES (?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO books (work_id, title, author, genres, embeddings) VALUES (?, ?, ?, ?, ?)
         ''', (row['work_id'], row['title'], row['authors'], row['genres'], embeddings))
     conn.commit()
     conn.close()
@@ -68,6 +71,8 @@ def insert_ratings_from_df(df):
 def reset_database():
     if os.path.exists('bookscout.db'):
         os.remove('bookscout.db')
+
+
 
 def fetch_cf_data():
     conn = sqlite3.connect('bookscout.db')
@@ -212,3 +217,39 @@ def get_hy_recommendations(user_id, work_id, cf_weight=0.5, cb_weight=0.5):
     final_recommendations = top_hy_recommendations.merge(books_df[['work_id', 'title']], on='work_id', how='left')
     
     return final_recommendations[['work_id', 'title']]
+
+
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def insert_user(username, password):
+    conn = sqlite3.connect('bookscout.db')
+    cursor = conn.cursor()
+
+    user_id = str(uuid.uuid4())
+    password_hash = hash_password(password)
+    
+    try:
+        cursor.execute("INSERT INTO users (user_id, username, password_hash) VALUES (?, ?, ?)",
+                       (user_id, username, password_hash))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+def check_credentials(username, password):
+    conn = sqlite3.connect('bookscout.db')
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM users WHERE username=? AND password_hash=?",
+                   (username, hash_password(password)))
+    user = cursor.fetchone()
+    conn.close()
+
+    return user is not None
+    
+
+
