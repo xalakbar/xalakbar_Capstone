@@ -11,6 +11,7 @@ import hnswlib
 from surprise import Dataset, Reader, SVD
 from surprise.model_selection import train_test_split
 
+
 def setup_database():
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
@@ -46,6 +47,7 @@ def setup_database():
     conn.commit()
     conn.close()
 
+
 def insert_books_from_df(df):
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
@@ -53,10 +55,11 @@ def insert_books_from_df(df):
         # Convert embeddings to bytes for SQLite compatability.
         embeddings = np.array(row['scaled_embeddings']).tobytes() if 'scaled_embeddings' in row else None
         cursor.execute('''
-        INSERT OR IGNORE INTO books (work_id, title, author, genres, embeddings) VALUES (?, ?, ?, ?, ?)
-        ''', (row['work_id'], row['title'], row['authors'], row['genres'], embeddings))
+        INSERT OR IGNORE INTO books (work_id, title, author, genres, embeddings, image_url) VALUES (?, ?, ?, ?, ?, ?)
+        ''', (row['work_id'], row['title'], row['authors'], row['genres'], embeddings, row['image_url']))
     conn.commit()
     conn.close()
+
 
 def insert_ratings_from_df(df):
     conn = sqlite3.connect('bookscout.db')
@@ -68,22 +71,26 @@ def insert_ratings_from_df(df):
     conn.commit()
     conn.close()
 
+
 def reset_database():
     if os.path.exists('bookscout.db'):
         os.remove('bookscout.db')
+
 
 def get_cf_data():
     conn = sqlite3.connect('bookscout.db')
     ratings_df = pd.read_sql_query('SELECT * FROM ratings', conn)
     conn.close()
-    
+
     return ratings_df
+
 
 def prepare_cf_data(ratings_df):
     reader = Reader(rating_scale=(1, 5))
     data = Dataset.load_from_df(ratings_df[['user_id', 'work_id', 'rating']], reader)
-    
+
     return data
+
 
 def load_svd():
     try:
@@ -91,6 +98,7 @@ def load_svd():
             return pickle.load(f)
     except FileNotFoundError:
         return None
+
 
 def train_svd(data):
     svd = load_svd()
@@ -105,6 +113,7 @@ def train_svd(data):
         pickle.dump(svd, f)
 
     return svd
+
 
 def get_cf_recommendations(user_id):
     ratings_df = get_cf_data()
@@ -122,14 +131,16 @@ def get_cf_recommendations(user_id):
     
     predictions.sort(key=lambda x: x[1], reverse=True)
     top_cf_recommendations = predictions[:5]
+
     return top_cf_recommendations
 
 def get_cb_data():
     conn = sqlite3.connect('bookscout.db')
-    books_df = pd.read_sql_query('SELECT work_id, title, embeddings FROM books', conn)
+    books_df = pd.read_sql_query('SELECT work_id, title, embeddings, image_url FROM books', conn)
     conn.close()
-    
+
     return books_df
+
 
 def load_embeddings(books_df):
     # Convert the embeddings from bytes back to numpy arrays
@@ -156,8 +167,9 @@ def load_embeddings(books_df):
     embeddings_object = np.array([np.frombuffer(embedding_bytes, dtype=np.float32) 
                                   if embedding_bytes else None for embedding_bytes 
                                   in books_df['embeddings']], dtype='object')    
-            
+    
     return embeddings_float, embeddings_object
+
 
 def get_cb_recommendations(work_id, k=10):
     books_df = get_cb_data()
@@ -196,6 +208,7 @@ def get_cb_recommendations(work_id, k=10):
 
     return top_cb_recommendations
 
+
 def get_hy_recommendations(user_id, work_id, cf_weight=0.5, cb_weight=0.5):
     cf_recommendations = get_cf_recommendations(user_id)
     cf_df = pd.DataFrame(cf_recommendations, columns=['work_id', 'predicted_rating'])
@@ -211,15 +224,15 @@ def get_hy_recommendations(user_id, work_id, cf_weight=0.5, cb_weight=0.5):
     hy_recommendations['final_rating'] = (hy_recommendations['cf_rating'] * cf_weight) + (hy_recommendations['cb_rating'] * cb_weight)
     
     top_hy_recommendations = hy_recommendations.sort_values(by='final_rating', ascending=False).head(5)
-    books_df = fetch_cb_data()
-    final_recommendations = top_hy_recommendations.merge(books_df[['work_id', 'title']], on='work_id', how='left')
+    books_df = get_cb_data()
+    final_recommendations = top_hy_recommendations.merge(books_df[['work_id', 'title', 'image_url']], on='work_id', how='left')
     
-    return final_recommendations[['work_id', 'title']]
-
+    return final_recommendations[['work_id', 'title', 'image_url']]
 
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
+
 
 def get_uid(username):
     conn = sqlite3.connect('bookscout.db')
@@ -235,6 +248,7 @@ def get_next_uid(cursor):
     max_id = cursor.fetchone()[0]
 
     return max_id + 1 if max_id is not None else 1
+
 
 def insert_user(username, password):
     conn = sqlite3.connect('bookscout.db')
@@ -261,6 +275,7 @@ def insert_user(username, password):
     finally:
         conn.close()
 
+
 def check_credentials(username, password):
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
@@ -273,4 +288,11 @@ def check_credentials(username, password):
     return user
     
 
+def get_goodbooks():
+    conn = sqlite3.connect('bookscout.db')
+    query = "SELECT work_id, title, author, image_url FROM books;"
+    goodbooks = pd.read_sql(query, conn)
+    conn.close()
+
+    return goodbooks
 

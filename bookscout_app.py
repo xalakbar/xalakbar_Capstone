@@ -3,7 +3,9 @@ import streamlit as st
 from bookscout_rs import(
     insert_user,
     check_credentials, 
-    get_uid
+    get_uid,
+    get_goodbooks,
+    get_hy_recommendations,
 )
 
 def login():
@@ -50,8 +52,44 @@ def signup():
                 st.warning("Please fill in all fields.")
 
 def homepage():
-    st.write("This is a placeholder.")     
+    goodbooks = get_goodbooks()
+    titles = goodbooks['title'].tolist()
 
+    selected_book = st.selectbox("Search or select a book", titles)
+
+    if st.button("Get Recommendations"):
+        user_id = st.session_state.get('user_id')
+        work_id = goodbooks[goodbooks['title'] == selected_book]['work_id'].values[0]
+
+        recommendations = get_hy_recommendations(user_id, work_id)
+
+        if not recommendations.empty:
+            col1, col2, col3, col4, col5 = st.columns(5)
+            for index, row in recommendations.iterrows():
+                col_index = index % 5
+                if col_index == 0:
+                    with col1:
+                        st.image(row['image_url'], width=100)
+                        st.text(row['title'])
+                elif col_index == 1:
+                    with col2:
+                        st.image(row['image_url'], width=100)
+                        st.text(row['title'])
+                elif col_index == 2:
+                    with col3:
+                        st.image(row['image_url'], width=100)
+                        st.text(row['title'])
+                elif col_index == 3:
+                    with col4:
+                        st.image(row['image_url'], width=100)
+                        st.text(row['title'])
+                elif col_index == 4:
+                    with col5:
+                        st.image(row['image_url'], width=100)
+                        st.text(row['title'])
+            st.markdown("---")
+        else:
+            st.write("Sorry, no recommendations found.")
 
 
 def main():
