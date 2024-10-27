@@ -1,7 +1,9 @@
+import time
 import streamlit as st
 from bookscout_rs import(
     insert_user,
-    check_credentials,
+    check_credentials, 
+    get_uid
 )
 
 def login():
@@ -14,8 +16,10 @@ def login():
             if check_credentials(user_log, pass_log):
                 st.session_state['logged_in'] = True
                 st.session_state['username'] = user_log
+                st.session_state['user_id'] = get_uid(user_log)
                 st.success("Login successful!")
-                homepage()
+                time.sleep(2)
+                st.rerun()
             else:
                 st.error("Invalid username or password.")
         else:
@@ -36,7 +40,8 @@ def signup():
                         st.session_state['username'] = user_sig
                         st.session_state['user_id'] = user_id
                         st.success("Sign-up sucessful!")
-                        homepage()
+                        time.sleep(2)
+                        st.rerun()
                     else:
                         st.error("Username already exists. Please choose a different one.")
                 else:
@@ -44,21 +49,8 @@ def signup():
             else:
                 st.warning("Please fill in all fields.")
 
-def homepage(goodbooks):
-    st.title("BookScout")
-    st.write(f"Hello, {st.session_state.get('username', 'Guest')}!") 
-
-
-   
-
-
-
-
-
-
-
-
-
+def homepage():
+    st.write("This is a placeholder.")     
 
 
 
@@ -66,6 +58,16 @@ def main():
     st.title("BookScout")
 
     if 'logged_in' in st.session_state and st.session_state['logged_in']:
+        st.sidebar.title("Welcome to BookScout!")
+        st.sidebar.header(f"Hello, {st.session_state['username']}!")
+        if st.sidebar.button("Logout"):
+            
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+                st.success("Log out successful.")
+                time.sleep(2)
+                st.rerun()
+
         homepage()
     else:
         login()

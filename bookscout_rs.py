@@ -4,11 +4,12 @@
 import os
 import pickle
 import sqlite3
-import uuid
 import hashlib
 import pandas as pd
 import numpy as np
 import hnswlib
+from surprise import Dataset, Reader, SVD
+from surprise.model_selection import train_test_split
 
 def setup_database():
     conn = sqlite3.connect('bookscout.db')
@@ -28,7 +29,7 @@ def setup_database():
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
-        username TEXT NOT NULL,
+        username TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL
     )
     ''')
@@ -38,8 +39,7 @@ def setup_database():
         rating INTEGER PRIMARY KEY,
         user_id INTEGER,
         work_id INTEGER,
-        FOREIGN KEY (work_id) REFERENCES books(work_id),
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
+        FOREIGN KEY (work_id) REFERENCES books(work_id)
     )
     ''')
     
@@ -72,9 +72,7 @@ def reset_database():
     if os.path.exists('bookscout.db'):
         os.remove('bookscout.db')
 
-
-
-def fetch_cf_data():
+def get_cf_data():
     conn = sqlite3.connect('bookscout.db')
     ratings_df = pd.read_sql_query('SELECT * FROM ratings', conn)
     conn.close()
@@ -109,7 +107,7 @@ def train_svd(data):
     return svd
 
 def get_cf_recommendations(user_id):
-    ratings_df = fetch_cf_data()
+    ratings_df = get_cf_data()
     data = prepare_cf_data(ratings_df)
     model = train_svd(data)
     
@@ -126,7 +124,7 @@ def get_cf_recommendations(user_id):
     top_cf_recommendations = predictions[:5]
     return top_cf_recommendations
 
-def fetch_cb_data():
+def get_cb_data():
     conn = sqlite3.connect('bookscout.db')
     books_df = pd.read_sql_query('SELECT work_id, title, embeddings FROM books', conn)
     conn.close()
@@ -162,7 +160,7 @@ def load_embeddings(books_df):
     return embeddings_float, embeddings_object
 
 def get_cb_recommendations(work_id, k=10):
-    books_df = fetch_cb_data()
+    books_df = get_cb_data()
     embeddings_float, embeddings_object = load_embeddings(books_df)
     
     if embeddings_float.size == 0:
@@ -223,17 +221,40 @@ def get_hy_recommendations(user_id, work_id, cf_weight=0.5, cb_weight=0.5):
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
+def get_uid(username):
+    conn = sqlite3.connect('bookscout.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users WHERE LOWER(username) = LOWER(?)", (username,))
+    user_id = cursor.fetchone()
+    conn.close()
+
+    return user_id[0] if user_id else None
+
+def get_next_uid(cursor):
+    cursor.execute("SELECT MAX(user_id) FROM ratings")
+    max_id = cursor.fetchone()[0]
+
+    return max_id + 1 if max_id is not None else 1
+
 def insert_user(username, password):
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
 
-    user_id = str(uuid.uuid4())
     password_hash = hash_password(password)
     
     try:
+        cursor.execute("SELECT username FROM users WHERE LOWER(username) = LOWER(?)", (username,))
+        existing_user = cursor.fetchone()
+
+        if existing_user:
+            return False
+        
+        user_id = get_next_uid(cursor)
+
         cursor.execute("INSERT INTO users (user_id, username, password_hash) VALUES (?, ?, ?)",
-                       (user_id, username, password_hash))
+                       (user_id, username.lower(), password_hash))
         conn.commit()
+
         return user_id
     except sqlite3.IntegrityError:
         return False
@@ -244,12 +265,12 @@ def check_credentials(username, password):
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM users WHERE username=? AND password_hash=?",
+    cursor.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(?) AND password_hash=?",
                    (username, hash_password(password)))
     user = cursor.fetchone()
     conn.close()
 
-    return user is not None
+    return user
     
 
 
