@@ -76,6 +76,11 @@ scaled_embeddings = scaler.fit_transform(flat_embeddings)
 
 goodbooks['scaled_embeddings'] = list(scaled_embeddings)
 
+goodbooks['image_url'] = goodbooks['image_url'].str.strip()
+
+pattern = 'https://s.gr-assets.com/assets/nophoto/book/'
+goodbooks = goodbooks[~goodbooks['image_url'].str.contains(pattern, case=False, na=False)]
+
 setup_database()
 insert_books_from_df(goodbooks)
 insert_ratings_from_df(goodbooks)
