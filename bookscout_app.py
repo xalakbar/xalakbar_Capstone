@@ -97,9 +97,10 @@ def main():
 
     if 'logged_in' in st.session_state and st.session_state['logged_in']:
         st.sidebar.title("Welcome to BookScout!")
-        st.sidebar.header(f"Hello, {st.session_state['username']}!")
+        if 'username' in st.session_state:
+            st.sidebar.header(f"Hello, {st.session_state['username']}!")
+
         if st.sidebar.button("Logout"):
-            
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
                 st.success("Log out successful.")
