@@ -21,6 +21,7 @@ def setup_database():
         work_id INTEGER PRIMARY KEY,
         title TEXT,
         author TEXT,
+        description TEXT,
         genres TEXT,
         embeddings BLOB,
         image_url TEXT
@@ -29,7 +30,7 @@ def setup_database():
     
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
+        user_id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL
     )
@@ -37,10 +38,12 @@ def setup_database():
     
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS ratings (
-        rating INTEGER PRIMARY KEY,
+        rating_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rating INTEGER,
         user_id INTEGER,
         work_id INTEGER,
-        FOREIGN KEY (work_id) REFERENCES books(work_id)
+        FOREIGN KEY (user_id) REFERENCES users(user_id),
+        FOREIGN KEY (work_id) REFERENCES books(work_id),
     )
     ''')
     
@@ -53,10 +56,21 @@ def insert_books_from_df(df):
     cursor = conn.cursor()
     for _, row in df.iterrows():
         # Convert embeddings to bytes for SQLite compatability.
-        embeddings = np.array(row['scaled_embeddings']).tobytes() if 'scaled_embeddings' in row else None
+        embeddings = np.array(row['scaled_desc_emb']).tobytes() if 'scaled_desc_emb' in row else None
         cursor.execute('''
-        INSERT OR IGNORE INTO books (work_id, title, author, genres, embeddings, image_url) VALUES (?, ?, ?, ?, ?, ?)
-        ''', (row['work_id'], row['title'], row['authors'], row['genres'], embeddings, row['image_url']))
+        INSERT INTO books (work_id, title, author, description, genres, embeddings, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (row['work_id'], row['title'], row['authors'], row['description'], row['genres'], embeddings, row['image_url']))
+    conn.commit()
+    conn.close()
+
+
+def insert_users_from_df(df):
+    conn = sqlite3.connect('bookscout.db')
+    cursor = conn.cursor()
+    for _, row in df.iterrows():
+        cursor.execute('''
+        INSERT INTO users (user_id, username) VALUES (?, ?)
+        ''', (row['user_id'], row['username']))
     conn.commit()
     conn.close()
 
@@ -66,7 +80,7 @@ def insert_ratings_from_df(df):
     cursor = conn.cursor()
     for _, row in df.iterrows():
         cursor.execute('''
-        INSERT OR IGNORE INTO ratings (user_id, work_id, rating) VALUES (?, ?, ?)
+        INSERT INTO ratings (user_id, work_id, rating) VALUES (?, ?, ?)
         ''', (row['user_id'], row['work_id'], row['rating']))
     conn.commit()
     conn.close()
