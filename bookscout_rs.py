@@ -59,7 +59,7 @@ def insert_books_from_df(df):
         # Convert embeddings to bytes for SQLite compatability.
         embeddings = np.array(row['scaled_desc_emb']).tobytes() if 'scaled_desc_emb' in row else None
         cursor.execute('''
-        INSERT OR IGNORE INTO books (work_id, title, author, description, genres, embeddings, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO books (work_id, title, author, description, genres, desc_emb, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (row['work_id'], row['title'], row['authors'], row['description'], row['genres'], embeddings, row['image_url']))
     conn.commit()
     conn.close()
@@ -180,44 +180,37 @@ def get_cf_recommendations(user_id):
 
 def get_cb_data():
     conn = sqlite3.connect('bookscout.db')
-    books_df = pd.read_sql_query('SELECT work_id, title, embeddings, image_url FROM books', conn)
+    books_df = pd.read_sql_query('SELECT work_id, title, desc_emb, image_url FROM books', conn)
     conn.close()
 
     return books_df
 
 
 def load_embeddings(books_df):
-    # Convert the embeddings from bytes back to numpy arrays
-    embeddings = []
-    
-    for embedding_bytes in books_df['embeddings']:
+    embeddings_float = []
+
+    for embedding_bytes in books_df['desc_emb']:
         if embedding_bytes is not None:
-            emb = np.frombuffer(embedding_bytes, dtype=np.float32)
-            embeddings.append(emb)
+            try:
+                emb = np.frombuffer(embedding_bytes, dtype=np.float32)
+                embeddings_float.append(emb)
+            except Exception as e:
+                print(f"Error converting bytes to array: {e}")
+                embeddings_float.append(None)
         else:
-            embeddings.append(None)
+            embeddings_float.append(None)
+
+    embeddings_float = [emb for emb in embeddings_float if emb is not None]
     
-    embeddings = [emb for emb in embeddings if emb is not None]
-    
-    if not embeddings:
+    if not embeddings_float:
         raise ValueError("No valid embeddings found.")
     
-    first_embedding_shape = embeddings[0].shape
-    for emb in embeddings:
-        if emb.shape != first_embedding_shape:
-            raise ValueError("Inconsistent embedding shapes found.")   
-        
-    embeddings_float = np.array(embeddings, dtype=np.float32)
-    embeddings_object = np.array([np.frombuffer(embedding_bytes, dtype=np.float32) 
-                                  if embedding_bytes else None for embedding_bytes 
-                                  in books_df['embeddings']], dtype='object')    
-    
-    return embeddings_float, embeddings_object
+    return np.array(embeddings_float, dtype=np.float32)
 
 
 def get_cb_recommendations(work_id, k=10):
     books_df = get_cb_data()
-    embeddings_float, embeddings_object = load_embeddings(books_df)
+    embeddings_float = load_embeddings(books_df)
     
     if embeddings_float.size == 0:
         raise ValueError("No valid embeddings found.")
@@ -235,7 +228,7 @@ def get_cb_recommendations(work_id, k=10):
         raise ValueError("No valid book index found.")
 
     # Use book_index[0] to get the scalar index
-    query_embedding = embeddings_object[book_index[0]].reshape(1, -1)
+    query_embedding = embeddings_float[book_index[0]].reshape(1, -1)
 
     labels, distances = hnsw_index.knn_query(query_embedding, k=k)
 
@@ -317,7 +310,7 @@ def check_credentials(username, password):
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(?) AND password_hash=?",
+    cursor.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(?) AND pass_hash=?",
                    (username, hash_password(password)))
     user = cursor.fetchone()
     conn.close()

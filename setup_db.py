@@ -109,7 +109,7 @@ goodbooks['desc_emb'] = goodbooks['desc_emb'].apply(lambda x: get_average_embedd
 flat_embeddings = pd.DataFrame(goodbooks['desc_emb'].tolist())
 scaler = StandardScaler()
 scaled_embeddings = scaler.fit_transform(flat_embeddings)
-goodbooks['scaled_embeddings'] = list(scaled_embeddings)
+goodbooks['scaled_desc_emb'] = list(scaled_embeddings)
 
 # Add usernames col
 userid_to_username = {}
