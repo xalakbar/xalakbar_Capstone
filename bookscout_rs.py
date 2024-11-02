@@ -23,7 +23,7 @@ def setup_database():
         author TEXT,
         description TEXT,
         genres TEXT,
-        embeddings BLOB,
+        desc_emb BLOB,
         image_url TEXT
     )
     ''')
@@ -31,8 +31,8 @@ def setup_database():
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL
+        username TEXT NOT NULL,
+        pass_hash TEXT NOT NULL
     )
     ''')
     
@@ -42,8 +42,9 @@ def setup_database():
         rating INTEGER,
         user_id INTEGER,
         work_id INTEGER,
+        UNIQUE(user_id, work_id),
         FOREIGN KEY (user_id) REFERENCES users(user_id),
-        FOREIGN KEY (work_id) REFERENCES books(work_id),
+        FOREIGN KEY (work_id) REFERENCES books(work_id)
     )
     ''')
     
@@ -58,7 +59,7 @@ def insert_books_from_df(df):
         # Convert embeddings to bytes for SQLite compatability.
         embeddings = np.array(row['scaled_desc_emb']).tobytes() if 'scaled_desc_emb' in row else None
         cursor.execute('''
-        INSERT INTO books (work_id, title, author, description, genres, embeddings, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO books (work_id, title, author, description, genres, embeddings, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (row['work_id'], row['title'], row['authors'], row['description'], row['genres'], embeddings, row['image_url']))
     conn.commit()
     conn.close()
@@ -67,21 +68,50 @@ def insert_books_from_df(df):
 def insert_users_from_df(df):
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
+    
+    uid_mapping = {}
+
     for _, row in df.iterrows():
-        cursor.execute('''
-        INSERT INTO users (user_id, username) VALUES (?, ?)
-        ''', (row['user_id'], row['username']))
-    conn.commit()
-    conn.close()
+        username = row['username']
+        pass_hash = row['password_hash']
+
+        cursor.execute('SELECT user_id FROM users WHERE LOWER(username) = LOWER(?)', (username.lower(),))
+        existing_user = cursor.fetchone()
+
+        if existing_user:
+            user_id = existing_user[0]
+        else:
+            try:
+               cursor.execute('''
+                    INSERT INTO users (username, pass_hash) VALUES (?, ?)
+                              ''', (username.lower(), pass_hash))
+               user_id = cursor.lastrowid
+            except sqlite3.IntegrityError:
+                continue
+
+        uid_mapping[username.lower()] = user_id
+
+        conn.commit()
+        conn.close()
+        return uid_mapping
 
 
-def insert_ratings_from_df(df):
+def insert_ratings_from_df(df, uid_mapping):
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
+
     for _, row in df.iterrows():
-        cursor.execute('''
-        INSERT INTO ratings (user_id, work_id, rating) VALUES (?, ?, ?)
-        ''', (row['user_id'], row['work_id'], row['rating']))
+        username = row['username']
+        user_id = uid_mapping.get(username.lower())
+
+        if user_id is not None:
+            work_id = row['work_id']
+            rating = row['rating']
+            
+            cursor.execute('''
+            INSERT OR REPLACE INTO ratings (user_id, work_id, rating) VALUES (?, ?, ?)
+            ''', (user_id, work_id, rating))
+
     conn.commit()
     conn.close()
 
@@ -257,33 +287,26 @@ def get_uid(username):
 
     return user_id[0] if user_id else None
 
-def get_next_uid(cursor):
-    cursor.execute("SELECT MAX(user_id) FROM ratings")
-    max_id = cursor.fetchone()[0]
-
-    return max_id + 1 if max_id is not None else 1
-
 
 def insert_user(username, password):
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
 
+    username = username.lower()
     password_hash = hash_password(password)
     
     try:
-        cursor.execute("SELECT username FROM users WHERE LOWER(username) = LOWER(?)", (username,))
+        cursor.execute("SELECT username FROM users WHERE username = ?", (username,))
         existing_user = cursor.fetchone()
 
         if existing_user:
             return False
-        
-        user_id = get_next_uid(cursor)
 
-        cursor.execute("INSERT INTO users (user_id, username, password_hash) VALUES (?, ?, ?)",
-                       (user_id, username.lower(), password_hash))
+        cursor.execute("INSERT INTO users (username, pass_hash) VALUES (?, ?)",
+                       (username, password_hash))
         conn.commit()
 
-        return user_id
+        return cursor.lastrowid
     except sqlite3.IntegrityError:
         return False
     finally:
