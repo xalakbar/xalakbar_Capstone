@@ -8,7 +8,7 @@ from sklearn.preprocessing import StandardScaler
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize, sent_tokenize
 from gensim.models import KeyedVectors
-from bookscout_rs import setup_database, insert_books_from_df, insert_users_from_df, insert_ratings_from_df
+from bookscout_rs import setup_database, insert_books_from_df, hash_password, insert_users_from_df, insert_ratings_from_df
 
 # Load data
 books = pd.read_csv('data/books_enriched.csv')
@@ -79,7 +79,7 @@ goodbooks['description'] = goodbooks['description'].apply(normalize_description)
 
 # Prepare description embeddings
 translator = str.maketrans('', '', string.punctuation + string.digits)
-goodbooks['desc_emb'] = goodbooks['desc_emb'].apply(lambda x: x.translate(translator).lower())
+goodbooks['desc_emb'] = goodbooks['description'].apply(lambda x: x.translate(translator).lower())
 
 nltk.download('stopwords')
 en_stopwords = set(stopwords.words('english'))
@@ -126,10 +126,14 @@ for index, row in goodbooks.iterrows():
 
 goodbooks['username'] = goodbooks['user_id'].map(userid_to_username)
 
+ # Add password col
+default_pass = 'default123'
+goodbooks['password_hash'] = goodbooks['username'].apply(lambda x: hash_password(default_pass))
+
 # Set up
 setup_database()
 insert_books_from_df(goodbooks)
-insert_users_from_df(goodbooks)
-insert_ratings_from_df(goodbooks)
+uid_mapping = insert_users_from_df(goodbooks)
+insert_ratings_from_df(goodbooks, uid_mapping)
 
 print("Database setup and data insertion complete.")
