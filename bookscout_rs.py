@@ -204,8 +204,7 @@ def load_embeddings(books_df):
     
     if not embeddings_float:
         raise ValueError("No valid embeddings found.")
-    
-    return np.array(embeddings_float, dtype=np.float32)
+        return np.array(embeddings_float, dtype=np.float32)
 
 
 def get_cb_recommendations(work_id, k=10):
