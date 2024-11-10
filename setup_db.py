@@ -1,18 +1,28 @@
 import re
 import string
 import nltk
+import requests
 import pandas as pd
 import numpy as np
 import gensim.downloader as gdl
+from io import StringIO
 from sklearn.preprocessing import StandardScaler
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize, sent_tokenize
 from gensim.models import KeyedVectors
 from bookscout_rs import setup_database, insert_books_from_df, hash_password, insert_users_from_df, insert_ratings_from_df
 
-# Load data
-books = pd.read_csv('data/books_enriched.csv')
-ratings = pd.read_csv('data/ratings.csv')
+# Extract data
+books_url = "https://raw.githubusercontent.com/malcolmosh/goodbooks-10k-extended/refs/heads/master/books_enriched.csv"
+ratings_url = "https://raw.githubusercontent.com/malcolmosh/goodbooks-10k-extended/refs/heads/master/ratings.csv"
+
+def download_csv(url):
+    response = requests.get(url)
+    response.raise_for_status()
+    return pd.read_csv(StringIO(response.text))
+
+books = download_csv(books_url)
+ratings = download_csv(ratings_url)
 
 # Rename book_id column
 ratings.rename(columns={'book_id':'work_id'}, inplace=True)
