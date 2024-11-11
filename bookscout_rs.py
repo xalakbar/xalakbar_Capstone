@@ -25,7 +25,7 @@ def setup_database():
         genres TEXT,
         desc_emb BLOB,
         image_url TEXT
-    )
+    );
     ''')
     
     cursor.execute('''
@@ -33,7 +33,7 @@ def setup_database():
         user_id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT NOT NULL,
         pass_hash TEXT NOT NULL
-    )
+    );
     ''')
     
     cursor.execute('''
@@ -45,7 +45,30 @@ def setup_database():
         UNIQUE(user_id, work_id),
         FOREIGN KEY (user_id) REFERENCES users(user_id),
         FOREIGN KEY (work_id) REFERENCES books(work_id)
-    )
+    );
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS favorites (
+        favorite_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        work_id INTEGER,
+        UNIQUE(user_id, work_id),
+        FOREIGN KEY (user_id) REFERENCES users(user_id),
+        FOREIGN KEY (work_id) REFERENCES books(work_id)
+    );
+    ''')
+        
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS reviews (
+        review_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        work_id INTEGER,
+        review_txt TEXT,
+        review_date DATETIME,
+        FOREIGN KEY (user_id) REFERENCES users(user_id),
+        FOREIGN KEY (work_id) REFERENCES books(work_id)
+    );
     ''')
     
     conn.commit()
