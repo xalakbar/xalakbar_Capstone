@@ -203,7 +203,7 @@ def get_cf_recommendations(user_id):
 
 def get_cb_data():
     conn = sqlite3.connect('bookscout.db')
-    books_df = pd.read_sql_query('SELECT work_id, title, desc_emb, image_url FROM books', conn)
+    books_df = pd.read_sql_query('SELECT work_id, title, author, description, desc_emb, image_url FROM books', conn)
     conn.close()
 
     return books_df
@@ -227,7 +227,8 @@ def load_embeddings(books_df):
     
     if not embeddings_float:
         raise ValueError("No valid embeddings found.")
-        return np.array(embeddings_float, dtype=np.float32)
+
+    return np.array(embeddings_float, dtype=np.float32)
 
 
 def get_cb_recommendations(work_id, k=10):
@@ -249,14 +250,10 @@ def get_cb_recommendations(work_id, k=10):
     if book_index.size == 0:
         raise ValueError("No valid book index found.")
 
-    # Use book_index[0] to get the scalar index
     query_embedding = embeddings_float[book_index[0]].reshape(1, -1)
-
     labels, distances = hnsw_index.knn_query(query_embedding, k=k)
 
-    # Check for valid labels
     valid_labels = [label for label in labels[0] if label < len(books_df)]
-    
     if not valid_labels:
         print("No valid recommendations found.")
         return []
@@ -284,9 +281,9 @@ def get_hy_recommendations(user_id, work_id, cf_weight=0.5, cb_weight=0.5):
     
     top_hy_recommendations = hy_recommendations.sort_values(by='final_rating', ascending=False).head(5)
     books_df = get_cb_data()
-    final_recommendations = top_hy_recommendations.merge(books_df[['work_id', 'title', 'image_url']], on='work_id', how='left')
+    final_recommendations = top_hy_recommendations.merge(books_df[['work_id', 'title', 'author', 'description', 'image_url']], on='work_id', how='left')
     
-    return final_recommendations[['work_id', 'title', 'image_url']]
+    return final_recommendations[['work_id', 'title', 'author', 'description', 'image_url']]
 
 
 def hash_password(password):
@@ -342,9 +339,79 @@ def check_credentials(username, password):
 
 def get_goodbooks():
     conn = sqlite3.connect('bookscout.db')
-    query = "SELECT work_id, title, author, image_url FROM books;"
+    query = "SELECT work_id, title, author, description, image_url FROM books;"
     goodbooks = pd.read_sql(query, conn)
     conn.close()
 
     return goodbooks
 
+
+def get_existing_rating(user_id, work_id):
+    conn = sqlite3.connect('bookscout.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT rating FROM ratings WHERE user_id = ? AND work_id = ?
+    ''', (user_id, work_id))
+    exisiting_rating = cursor.fetchone()
+    conn.close()
+    
+    return exisiting_rating[0] if exisiting_rating else None
+
+
+def get_favorite_status(user_id, work_id):
+    conn = sqlite3.connect('bookscout.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM favorites WHERE user_id = ? AND work_id = ?
+    ''', (user_id, work_id))
+    is_favorited = cursor.fetchone()
+    conn.close()
+    
+    return is_favorited is not None
+
+
+def toggle_favorite(user_id, work_id, add=True):
+    conn = sqlite3.connect('bookscout.db')
+    cursor = conn.cursor()
+    if add:
+          cursor.execute('''
+            INSERT OR IGNORE INTO favorites (user_id, work_id) VALUES (?, ?)
+        ''', (user_id, work_id))
+    else: cursor.execute('''
+            DELETE FROM favorites WHERE user_id = ? AND work_id = ?
+        ''', (user_id, work_id))
+    conn.commit()
+    conn.close()
+
+
+def get_existing_review(user_id, work_id):
+    conn = sqlite3.connect('bookscout.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT review_txt FROM reviews WHERE user_id = ? AND work_id = ?
+    ''', (user_id, work_id))
+    existing_review = cursor.fetchone()
+    conn.close()
+
+    return existing_review[0] if existing_review else None
+
+
+def save_rating(user_id, work_id, rating):
+    conn = sqlite3.connect('bookscout.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR REPLACE INTO ratings (user_id, work_id, rating) VALUES (?, ?, ?)
+    ''', (user_id, work_id, rating))
+    conn.commit()
+    conn.close()
+
+
+def save_review(user_id, work_id, review_text):
+    conn = sqlite3.connect('bookscout.db')
+    cursor = conn.cursor()
+    if review_text.strip(): 
+        cursor.execute('''
+            INSERT OR REPLACE INTO reviews (user_id, work_id, review_txt, review_date) VALUES (?, ?, ?, ?)
+        ''', (user_id, work_id, review_text, pd.to_datetime("now")))
+    conn.commit()
+    conn.close()

@@ -6,6 +6,12 @@ from bookscout_rs import(
     get_uid,
     get_goodbooks,
     get_hy_recommendations,
+    get_existing_rating,
+    get_favorite_status,
+    toggle_favorite,
+    get_existing_review,
+    save_rating,
+    save_review
 )
 
 def login():
@@ -63,34 +69,80 @@ def homepage():
 
         recommendations = get_hy_recommendations(user_id, work_id)
 
-        if not recommendations.empty:
-            col1, col2, col3, col4, col5 = st.columns(5)
-            for index, row in recommendations.iterrows():
-                col_index = index % 5
-                if col_index == 0:
-                    with col1:
-                        st.image(row['image_url'], width=100)
-                        st.text(row['title'])
-                elif col_index == 1:
-                    with col2:
-                        st.image(row['image_url'], width=100)
-                        st.text(row['title'])
-                elif col_index == 2:
-                    with col3:
-                        st.image(row['image_url'], width=100)
-                        st.text(row['title'])
-                elif col_index == 3:
-                    with col4:
-                        st.image(row['image_url'], width=100)
-                        st.text(row['title'])
-                elif col_index == 4:
-                    with col5:
-                        st.image(row['image_url'], width=100)
-                        st.text(row['title'])
-            st.markdown("---")
+        if recommendations is not None and not recommendations.empty:
+            st.session_state.recommendations = recommendations
+            st.session_state.recommendations_found = True
         else:
-            st.write("Sorry, no recommendations found.")
+            st.session_state.recommendations = None
+            st.session_state.recommendations_found = False
 
+    if st.session_state.get('recommendations_found', False):
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        for index, row in st.session_state.recommendations.iterrows():
+            book_work_id = row['work_id']
+            book_image = row['image_url']
+            book_title = row['title']
+            book_author = row['author']
+            book_description = row['description']
+
+            col_index = index % 5
+            with [col1, col2, col3, col4, col5][col_index]:
+                st.image(book_image, caption=book_title, use_column_width=True)
+
+                # Button to show details of each book
+                if st.button("See Details", key=f"details_{book_work_id}"):
+                    st.session_state.selected_book = {
+                        'id': book_work_id,
+                        'title': book_title,
+                        'author': book_author,
+                        'description': book_description,
+                        'image': book_image
+                    }
+                    st.session_state.selected_book_updated = True
+
+    if not st.session_state.get('recommendations_found', True):
+        st.write("Sorry, no recommendations found.")
+
+    # Display selected book details if they exist
+    if 'selected_book' in st.session_state and st.session_state.get('selected_book_updated', False):
+        
+        selected_book = st.session_state.selected_book
+        user_id = st.session_state.get('user_id')
+        work_id = selected_book['id']
+
+        existing_rating = get_existing_rating(user_id, work_id)
+
+        st.write(f"**Title:** {selected_book['title']}")
+        st.write(f"**Author:** {selected_book['author']}")
+        st.write(f"**Description:** {selected_book['description']}")
+
+        st.write("Rate this book:")
+
+        rating_key = f'rating_{work_id}'
+
+        if rating_key not in st.session_state:
+            st.session_state[rating_key] = existing_rating if existing_rating is not None else None
+
+        # Get the rating from the feedback widget
+        rating = st.feedback("stars", key=f"rating_widget_{work_id}")
+
+
+        if rating is not None and rating != st.session_state[rating_key]:
+            adjusted_rating = rating + 1  # Adjust to match the 1-5 scale
+            st.session_state[rating_key] = adjusted_rating
+            save_rating(user_id, work_id, adjusted_rating)
+            st.write(f"{adjusted_rating} ⭐️ rating saved.")
+
+        # Show the existing rating, if any
+        if st.session_state[rating_key] is not None:
+            st.write(f"You've rated this book {st.session_state[rating_key]} ⭐️")
+
+   
+
+def main():
+    st.title("BookScout")
+    homepage()
 
 def main():
     st.title("BookScout")
