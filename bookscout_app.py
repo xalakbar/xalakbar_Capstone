@@ -7,10 +7,8 @@ from bookscout_rs import(
     get_goodbooks,
     get_hy_recommendations,
     get_existing_rating,
-    get_favorite_status,
-    toggle_favorite,
-    get_existing_review,
     save_rating,
+    get_all_reviews,
     save_review
 )
 
@@ -97,20 +95,20 @@ def homepage():
                         'title': book_title,
                         'author': book_author,
                         'description': book_description,
-                        'image': book_image
                     }
                     st.session_state.selected_book_updated = True
 
     if not st.session_state.get('recommendations_found', True):
         st.write("Sorry, no recommendations found.")
 
-    # Display selected book details if they exist
+    # Display selected book details
     if 'selected_book' in st.session_state and st.session_state.get('selected_book_updated', False):
         
         selected_book = st.session_state.selected_book
         user_id = st.session_state.get('user_id')
         work_id = selected_book['id']
 
+    # Ratings section
         existing_rating = get_existing_rating(user_id, work_id)
 
         st.write(f"**Title:** {selected_book['title']}")
@@ -137,6 +135,26 @@ def homepage():
         # Show the existing rating, if any
         if st.session_state[rating_key] is not None:
             st.write(f"You've rated this book {st.session_state[rating_key]} ⭐️")
+
+    # Reviews section
+        review_text = st.text_area("Leave a Review:", key=f"review_{work_id}")
+
+        if st.button("Submit Review", key=f"submit_review_{work_id}"):
+            if review_text:
+                save_review(user_id, work_id, review_text)
+                st.success("Review submitted successfully!")
+                st.rerun()
+            else:
+                st.error("Please write something in the review field.")
+
+        reviews_df = get_all_reviews(work_id)
+        st.write("**Reviews:**")
+
+        if not reviews_df.empty:
+            for index, review in reviews_df.iterrows():
+                st.write(f"({review['review_date']}) **{review['username']}**: {review['review_txt']}")
+        else:
+            st.write("No reviews yet for this book.")
 
    
 

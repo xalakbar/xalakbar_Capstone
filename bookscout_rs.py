@@ -384,7 +384,7 @@ def toggle_favorite(user_id, work_id, add=True):
     conn.close()
 
 
-def get_existing_review(user_id, work_id):
+def get_user_review(user_id, work_id):
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -410,8 +410,23 @@ def save_review(user_id, work_id, review_text):
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
     if review_text.strip(): 
+        review_date = pd.to_datetime("now")
+        review_date_str = review_date.strftime('%Y-%m-%d')
         cursor.execute('''
             INSERT OR REPLACE INTO reviews (user_id, work_id, review_txt, review_date) VALUES (?, ?, ?, ?)
-        ''', (user_id, work_id, review_text, pd.to_datetime("now")))
+        ''', (user_id, work_id, review_text, review_date_str))
     conn.commit()
     conn.close()
+
+def get_all_reviews(work_id):
+    conn = sqlite3.connect('bookscout.db')
+    query = '''
+        SELECT r.review_txt, u.username, r.review_date 
+        FROM reviews r 
+        JOIN users u ON r.user_id = u.user_id
+        WHERE r.work_id = ? 
+        ORDER BY r.review_date DESC
+    '''
+    reviews_df = pd.read_sql_query(query, conn, params=(work_id,))
+    conn.close()
+    return reviews_df
