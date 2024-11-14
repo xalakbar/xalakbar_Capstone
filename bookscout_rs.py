@@ -47,17 +47,6 @@ def setup_database():
         FOREIGN KEY (work_id) REFERENCES books(work_id)
     );
     ''')
-
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS favorites (
-        favorite_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        work_id INTEGER,
-        UNIQUE(user_id, work_id),
-        FOREIGN KEY (user_id) REFERENCES users(user_id),
-        FOREIGN KEY (work_id) REFERENCES books(work_id)
-    );
-    ''')
         
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS reviews (
@@ -356,32 +345,6 @@ def get_existing_rating(user_id, work_id):
     conn.close()
     
     return exisiting_rating[0] if exisiting_rating else None
-
-
-def get_favorite_status(user_id, work_id):
-    conn = sqlite3.connect('bookscout.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT * FROM favorites WHERE user_id = ? AND work_id = ?
-    ''', (user_id, work_id))
-    is_favorited = cursor.fetchone()
-    conn.close()
-    
-    return is_favorited is not None
-
-
-def toggle_favorite(user_id, work_id, add=True):
-    conn = sqlite3.connect('bookscout.db')
-    cursor = conn.cursor()
-    if add:
-          cursor.execute('''
-            INSERT OR IGNORE INTO favorites (user_id, work_id) VALUES (?, ?)
-        ''', (user_id, work_id))
-    else: cursor.execute('''
-            DELETE FROM favorites WHERE user_id = ? AND work_id = ?
-        ''', (user_id, work_id))
-    conn.commit()
-    conn.close()
 
 
 def get_user_review(user_id, work_id):
