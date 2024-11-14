@@ -9,7 +9,8 @@ from bookscout_rs import(
     get_existing_rating,
     save_rating,
     get_all_reviews,
-    save_review
+    save_review,
+    get_top_rated_books
 )
 
 def login():
@@ -101,6 +102,7 @@ def homepage():
     if not st.session_state.get('recommendations_found', True):
         st.write("Sorry, no recommendations found.")
 
+
     # Display selected book details
     if 'selected_book' in st.session_state and st.session_state.get('selected_book_updated', False):
         
@@ -155,6 +157,23 @@ def homepage():
                 st.write(f"({review['review_date']}) **{review['username']}**: {review['review_txt']}")
         else:
             st.write("No reviews yet for this book.")
+
+        top_books = get_top_rated_books()
+
+    st.subheader("Top Rated Books")
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    for index, row in top_books.iterrows():
+        book_work_id = row['work_id']
+        book_title = row['title']
+        book_author = row['author']
+        book_image = row['image_url']
+        book_rating = round(row['avg_rating'], 2)
+
+        col_index = index % 5  # To make the layout responsive (5 columns)
+        with [col1, col2, col3, col4, col5][col_index]:
+            st.image(book_image, caption=f"{book_title} ({book_author})", use_column_width=True)
+            st.write(f"⭐ {book_rating} Rating")
 
    
 

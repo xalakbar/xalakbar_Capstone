@@ -393,3 +393,18 @@ def get_all_reviews(work_id):
     reviews_df = pd.read_sql_query(query, conn, params=(work_id,))
     conn.close()
     return reviews_df
+
+def get_top_rated_books():
+    conn = sqlite3.connect('bookscout.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT b.work_id, b.title, b.author, b.image_url, AVG(r.rating) as avg_rating
+        FROM books b
+        JOIN ratings r ON b.work_id = r.work_id
+        GROUP BY b.work_id
+        ORDER BY avg_rating DESC
+        LIMIT 10
+    ''')
+    top_rated_books = pd.DataFrame(cursor.fetchall(), columns=['work_id', 'title', 'author', 'image_url', 'avg_rating'])
+    conn.close()
+    return top_rated_books
