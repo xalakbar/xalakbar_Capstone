@@ -158,7 +158,7 @@ def homepage():
         else:
             st.write("No reviews yet for this book.")
 
-        top_books = get_top_rated_books()
+    top_books = get_top_rated_books()
 
     st.subheader("Top Rated Books")
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -174,12 +174,6 @@ def homepage():
         with [col1, col2, col3, col4, col5][col_index]:
             st.image(book_image, caption=f"{book_title} ({book_author})", use_column_width=True)
             st.write(f"⭐ {book_rating} Rating")
-
-   
-
-def main():
-    st.title("BookScout")
-    homepage()
 
 def main():
     st.title("BookScout")
