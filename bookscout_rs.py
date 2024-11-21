@@ -162,7 +162,7 @@ def train_svd(data):
         return svd
     
     trainset, testset = train_test_split(data, test_size=0.25)
-    svd = SVD(n_factors=150, n_epochs=40, lr_all=0.011, reg_all=0.006)
+    svd = SVD(n_factors=310, n_epochs=130, lr_all=0.017, reg_all=0.02, random_state=42)
     svd.fit(trainset)
     
     with open('svd.pkl', 'wb') as f:
@@ -186,7 +186,7 @@ def get_cf_recommendations(user_id):
             predictions.append((book, pred.est))
     
     predictions.sort(key=lambda x: x[1], reverse=True)
-    top_cf_recommendations = predictions[:5]
+    top_cf_recommendations = predictions[:30]
 
     return top_cf_recommendations
 
@@ -232,7 +232,7 @@ def get_cb_recommendations(work_id, k=10):
     hnsw_index = hnswlib.Index(space='cosine', dim=dim)
     hnsw_index.init_index(max_elements=num_entries, ef_construction=300, M=32)
     hnsw_index.add_items(embeddings_float, ids=np.arange(num_entries))
-    hnsw_index.set_ef(300)
+    hnsw_index.set_ef(80)
 
     book_index = books_df[books_df['work_id'] == work_id].index
 
@@ -249,26 +249,53 @@ def get_cb_recommendations(work_id, k=10):
 
     top_cb_recommendations = books_df.iloc[valid_labels][['work_id', 'title']]
     top_cb_recommendations = top_cb_recommendations[top_cb_recommendations['work_id'] != work_id]
-    top_cb_recommendations = top_cb_recommendations.drop_duplicates(subset='work_id')[['work_id', 'title']][:5]
+    top_cb_recommendations = top_cb_recommendations.drop_duplicates(subset='work_id')[['work_id', 'title']][:30]
 
     return top_cb_recommendations
 
 
-def get_hy_recommendations(user_id, work_id, cf_weight=0.5, cb_weight=0.5):
+def get_hy_recommendations(user_id, work_id):
     cf_recommendations = get_cf_recommendations(user_id)
     cf_df = pd.DataFrame(cf_recommendations, columns=['work_id', 'predicted_rating'])
     
     cb_recommendations = get_cb_recommendations(work_id)
     cb_df = cb_recommendations.copy()
     cb_df['predicted_rating'] = 1.0
-    
-    hy_recommendations = pd.concat([cf_df.rename(columns={'predicted_rating': 'cf_rating'}),
-                                 cb_df.rename(columns={'predicted_rating': 'cb_rating'})],
-                                 ignore_index=True)
-    hy_recommendations = hy_recommendations.groupby('work_id').agg({'cf_rating': 'sum', 'cb_rating': 'sum'}).reset_index()
-    hy_recommendations['final_rating'] = (hy_recommendations['cf_rating'] * cf_weight) + (hy_recommendations['cb_rating'] * cb_weight)
-    
-    top_hy_recommendations = hy_recommendations.sort_values(by='final_rating', ascending=False).head(5)
+
+    existing_rating = get_existing_rating(user_id, work_id)
+
+    cf_weight = 0.5
+    cb_weight = 0.5
+
+    if existing_rating is not None:
+        if existing_rating >= 4:
+            if work_id in cf_df['work_id'].values:
+                cf_weight += 0.05
+            else:
+                cb_weight += 0.05
+        else:
+            if work_id in cf_df['work_id'].values:
+                cf_weight -= 0.05
+            else:
+                cb_weight -= 0.05
+        
+        total_weight = cf_weight + cb_weight
+        cf_weight /= total_weight
+        cb_weight /= total_weight
+
+    cfcb_books = set(cf_df['work_id']).intersection(cb_df['work_id'])
+    cb_df = cb_df[~cb_df['work_id'].isin(cfcb_books)]
+
+    combined_recommendations = pd.concat([cf_df.rename(columns={'predicted_rating': 'cf_rating'}),
+                                          cb_df.rename(columns={'predicted_rating': 'cb_rating'})],
+                                         ignore_index=True)
+
+    combined_recommendations = combined_recommendations.groupby('work_id').agg({'cf_rating': 'sum', 'cb_rating': 'sum'}).reset_index()
+    combined_recommendations['final_rating'] = (combined_recommendations['cf_rating'] * cf_weight) + (combined_recommendations['cb_rating'] * cb_weight)
+    combined_recommendations['final_rating'] += np.random.uniform(0, 0.1, size=len(combined_recommendations))
+
+    top_hy_recommendations = combined_recommendations.sort_values(by='final_rating', ascending=False).head(5)
+
     books_df = get_cb_data()
     final_recommendations = top_hy_recommendations.merge(books_df[['work_id', 'title', 'author', 'description', 'image_url']], on='work_id', how='left')
     
