@@ -8,6 +8,7 @@ import hashlib
 import pandas as pd
 import numpy as np
 import hnswlib
+import streamlit as st
 from surprise import Dataset, Reader, SVD
 from surprise.model_selection import train_test_split
 
@@ -421,7 +422,7 @@ def get_all_reviews(work_id):
     conn.close()
     return reviews_df
 
-def get_top_rated_books():
+def get_top_rated_books_from_db():
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -435,3 +436,7 @@ def get_top_rated_books():
     top_rated_books = pd.DataFrame(cursor.fetchall(), columns=['work_id', 'title', 'author', 'image_url', 'avg_rating'])
     conn.close()
     return top_rated_books
+
+@st.cache_data(ttl=600)
+def get_top_rated_books():
+    return get_top_rated_books_from_db()
