@@ -234,7 +234,7 @@ def load_embeddings(books_df):
     return np.array(embeddings_float, dtype=np.float32)
 
 
-def get_cb_recommendations(work_id, k=10):
+def get_cb_recommendations(work_id):
     books_df = get_cb_data()
     embeddings_float = load_embeddings(books_df)
     
@@ -254,16 +254,22 @@ def get_cb_recommendations(work_id, k=10):
         raise ValueError("No valid book index found.")
 
     query_embedding = embeddings_float[book_index[0]].reshape(1, -1)
-    labels, distances = hnsw_index.knn_query(query_embedding, k=k)
+    labels, distances = hnsw_index.knn_query(query_embedding, k=10)
+
+    similarities = 1 - distances[0]
 
     valid_labels = [label for label in labels[0] if label < len(books_df)]
     if not valid_labels:
         print("No valid recommendations found.")
         return []
 
-    top_cb_recommendations = books_df.iloc[valid_labels][['work_id', 'title']]
+    top_cb_recommendations = books_df.iloc[valid_labels][['work_id', 'title']].copy()
+    top_cb_recommendations['similarity_score'] = similarities[:len(valid_labels)]
+    
+    top_cb_recommendations = top_cb_recommendations.drop_duplicates(subset='work_id')
     top_cb_recommendations = top_cb_recommendations[top_cb_recommendations['work_id'] != work_id]
-    top_cb_recommendations = top_cb_recommendations.drop_duplicates(subset='work_id')[['work_id', 'title']][:30]
+
+    top_cb_recommendations = top_cb_recommendations.sort_values(by='similarity_score', ascending=False)[:30]
 
     return top_cb_recommendations
 
@@ -274,7 +280,7 @@ def get_hy_recommendations(user_id, work_id):
     
     cb_recommendations = get_cb_recommendations(work_id)
     cb_df = cb_recommendations.copy()
-    cb_df['predicted_rating'] = 1.0
+    cb_df['predicted_rating'] = cb_df.get('similarity_score', 1.0)
 
     existing_rating = get_existing_rating(user_id, work_id)
     existing_sentiment = get_existing_sentiment(user_id, work_id)
