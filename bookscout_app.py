@@ -10,7 +10,8 @@ from bookscout_rs import(
     save_rating,
     get_all_reviews,
     save_review,
-    get_top_rated_books
+    get_top_rated_books,
+    initialize_nltk
 )
 
 def login():
@@ -196,4 +197,5 @@ def main():
         signup()
 
 if __name__ == "__main__":
+    initialize_nltk()
     main()

@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
 import os
 import pickle
 import sqlite3
@@ -8,7 +5,9 @@ import hashlib
 import pandas as pd
 import numpy as np
 import hnswlib
+import nltk
 import streamlit as st
+from nltk.sentiment import SentimentIntensityAnalyzer
 from surprise import Dataset, Reader, SVD
 from surprise.model_selection import train_test_split
 
@@ -56,6 +55,7 @@ def setup_database():
         work_id INTEGER,
         review_txt TEXT,
         review_date DATETIME,
+        sentiment_score REAL,
         FOREIGN KEY (user_id) REFERENCES users(user_id),
         FOREIGN KEY (work_id) REFERENCES books(work_id)
     );
@@ -134,9 +134,22 @@ def reset_database():
         os.remove('bookscout.db')
 
 
+def initialize_nltk():
+    try:
+        nltk.data.find('sentiment/vader_lexicon.zip')
+    except LookupError:
+        nltk.download('vader_lexicon')
+
+
 def get_cf_data():
     conn = sqlite3.connect('bookscout.db')
-    ratings_df = pd.read_sql_query('SELECT * FROM ratings', conn)
+    query = '''
+        SELECT r.user_id, r.work_id, r.rating, 
+               COALESCE(rv.sentiment_score, 0) AS sentiment_score
+        FROM ratings r
+        LEFT JOIN reviews rv ON r.user_id = rv.user_id AND r.work_id = rv.work_id
+    '''
+    ratings_df = pd.read_sql_query(query, conn)
     conn.close()
 
     return ratings_df
@@ -264,6 +277,7 @@ def get_hy_recommendations(user_id, work_id):
     cb_df['predicted_rating'] = 1.0
 
     existing_rating = get_existing_rating(user_id, work_id)
+    existing_sentiment = get_existing_sentiment(user_id, work_id)
 
     cf_weight = 0.5
     cb_weight = 0.5
@@ -280,10 +294,18 @@ def get_hy_recommendations(user_id, work_id):
             else:
                 cb_weight -= 0.05
         
-        total_weight = cf_weight + cb_weight
-        cf_weight /= total_weight
-        cb_weight /= total_weight
+    if existing_sentiment is not None:
+        if existing_sentiment >= 0.5:
+            cf_weight += 0.1
+        elif existing_sentiment <= -0.5:
+            cb_weight += 0.1
 
+    # Normalizing weights
+    total_weight = cf_weight + cb_weight
+    cf_weight /= total_weight
+    cb_weight /= total_weight
+
+    # Remove overlap between CF and CB recommendations
     cfcb_books = set(cf_df['work_id']).intersection(cb_df['work_id'])
     cb_df = cb_df[~cb_df['work_id'].isin(cfcb_books)]
 
@@ -375,6 +397,17 @@ def get_existing_rating(user_id, work_id):
     return exisiting_rating[0] if exisiting_rating else None
 
 
+def get_existing_sentiment(user_id, work_id):
+    conn = sqlite3.connect('bookscout.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT sentiment_score FROM reviews WHERE user_id = ? AND work_id = ?
+    ''', (user_id, work_id))
+    sentiment = cursor.fetchone()
+    conn.close()
+
+    return sentiment[0] if sentiment else None
+
 def get_user_review(user_id, work_id):
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
@@ -398,14 +431,15 @@ def save_rating(user_id, work_id, rating):
 
 
 def save_review(user_id, work_id, review_text):
+    sentiment_score = analyze_sentiment_vader(review_text)
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
     if review_text.strip(): 
         review_date = pd.to_datetime("now")
         review_date_str = review_date.strftime('%Y-%m-%d')
         cursor.execute('''
-            INSERT OR REPLACE INTO reviews (user_id, work_id, review_txt, review_date) VALUES (?, ?, ?, ?)
-        ''', (user_id, work_id, review_text, review_date_str))
+            INSERT OR REPLACE INTO reviews (user_id, work_id, review_txt, review_date, sentiment_score) VALUES (?, ?, ?, ?, ?)
+        ''', (user_id, work_id, review_text, review_date_str, sentiment_score))
     conn.commit()
     conn.close()
 
@@ -440,3 +474,11 @@ def get_top_rated_books_from_db():
 @st.cache_data(ttl=600)
 def get_top_rated_books():
     return get_top_rated_books_from_db()
+
+
+sia = SentimentIntensityAnalyzer()
+def analyze_sentiment_vader(review_text):
+    if not review_text.strip():
+        return 0 # Neutral sentiment for empty reviews
+    sentiment = sia.polarity_scores(review_text)
+    return sentiment['compound']
