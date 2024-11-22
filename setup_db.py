@@ -10,7 +10,7 @@ from sklearn.preprocessing import StandardScaler
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize, sent_tokenize
 from gensim.models import KeyedVectors
-from bookscout_rs import setup_database, insert_books_from_df, hash_password, insert_users_from_df, insert_ratings_from_df
+from bookscout_rs import setup_database, insert_books_from_df, hash_password, insert_users_from_df, insert_ratings_from_df, initialize_nltk
 
 # Extract data
 books_url = "https://raw.githubusercontent.com/malcolmosh/goodbooks-10k-extended/refs/heads/master/books_enriched.csv"
@@ -145,5 +145,6 @@ setup_database()
 insert_books_from_df(goodbooks)
 uid_mapping = insert_users_from_df(goodbooks)
 insert_ratings_from_df(goodbooks, uid_mapping)
+initialize_nltk()
 
 print("Database setup and data insertion complete.")

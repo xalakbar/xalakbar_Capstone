@@ -482,8 +482,8 @@ def get_top_rated_books():
     return get_top_rated_books_from_db()
 
 
-sia = SentimentIntensityAnalyzer()
 def analyze_sentiment_vader(review_text):
+    sia = SentimentIntensityAnalyzer()
     if not review_text.strip():
         return 0 # Neutral sentiment for empty reviews
     sentiment = sia.polarity_scores(review_text)

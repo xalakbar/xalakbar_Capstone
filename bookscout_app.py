@@ -197,5 +197,4 @@ def main():
         signup()
 
 if __name__ == "__main__":
-    initialize_nltk()
     main()
