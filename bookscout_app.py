@@ -10,8 +10,7 @@ from bookscout_rs import(
     save_rating,
     get_all_reviews,
     save_review,
-    get_top_rated_books,
-    initialize_nltk
+    get_top_rated_books
 )
 
 def login():
@@ -64,6 +63,10 @@ def homepage():
     selected_book = st.selectbox("Search or select a book", titles)
 
     if st.button("Get Recommendations"):
+        if 'selected_book' in st.session_state:
+            del st.session_state['selected_book']
+            st.session_state['selected_book_updated'] = False
+            
         user_id = st.session_state.get('user_id')
         work_id = goodbooks[goodbooks['title'] == selected_book]['work_id'].values[0]
 
