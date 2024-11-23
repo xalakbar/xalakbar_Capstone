@@ -472,7 +472,7 @@ def save_review(user_id, work_id, review_text):
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
     if review_text.strip(): 
-        review_date = pd.to_datetime("now")
+        review_date = pd.to_datetime("now", utc=True)
         review_date_str = review_date.strftime('%Y-%m-%d')
         cursor.execute('''
             INSERT OR REPLACE INTO reviews (user_id, work_id, review_txt, review_date, sentiment_score) VALUES (?, ?, ?, ?, ?)
