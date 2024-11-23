@@ -13,6 +13,7 @@ from bookscout_rs import(
     get_top_rated_books
 )
 
+
 def login():
     st.header("Log In")
     user_log = st.text_input("Username", key="login_username")
@@ -31,6 +32,7 @@ def login():
                 st.error("Invalid username or password.")
         else:
             st.warning("Please fill in both fields.")
+
 
 def signup():
     with st.expander("Sign Up", expanded=False):
@@ -56,17 +58,19 @@ def signup():
             else:
                 st.warning("Please fill in all fields.")
 
+
 def homepage():
     goodbooks = get_goodbooks()
     titles = goodbooks['title'].tolist()
 
     selected_book = st.selectbox("Search or select a book", titles)
 
+    # Button to get recommendations
     if st.button("Get Recommendations"):
         if 'selected_book' in st.session_state:
             del st.session_state['selected_book']
             st.session_state['selected_book_updated'] = False
-            
+
         user_id = st.session_state.get('user_id')
         work_id = goodbooks[goodbooks['title'] == selected_book]['work_id'].values[0]
 
