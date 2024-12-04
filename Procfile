@@ -1,0 +1,1 @@
+web: streamlit run bookscout_app.py
