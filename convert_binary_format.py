@@ -1,9 +1,5 @@
 import re
 
-# Function to convert binary data
-def convert_binary_data(match):
-    return b'0x' + match.group(1).encode('utf-8')
-
 def process_binary_data(file_path, output_path):
     # Open the file with UTF-16 LE encoding to read it properly
     with open(file_path, 'r', encoding='utf-16') as file:
