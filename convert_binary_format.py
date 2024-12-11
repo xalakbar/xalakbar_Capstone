@@ -1,18 +1,22 @@
 import re
 
-# Function to prepend 0x and remove single quotes and X prefix around binary data
+# Function to convert binary data
+def convert_binary_data(match):
+    return b'0x' + match.group(1).encode('utf-8')
+
 def process_binary_data(file_path, output_path):
-    # Read the content of the SQL file
-    with open(file_path, 'r', encoding='utf-8') as file:
-        sql_content = file.read()
+    # Open the file with UTF-16 LE encoding to read it properly
+    with open(file_path, 'r', encoding='utf-16') as file:
+        file_content = file.read()
 
-    # Use regular expression to find binary data patterns like X'...' and replace with 0x...
-    processed_content = re.sub(r"X'([0-9A-Fa-f]+)'", r"0x\1", sql_content)
+    # Use regex to match binary patterns (X'...' -> 0x...)
+    processed_content = re.sub(r"X'([0-9A-Fa-f]+)'", r"0x\1", file_content)
 
-    # Write the modified content to a new SQL file
-    with open(output_path, 'w', encoding='utf-8') as output_file:
+    # Write the processed content back to a new file, using UTF-16 LE encoding
+    with open(output_path, 'w', encoding='utf-16') as output_file:
         output_file.write(processed_content)
 
+# Example usage:
 input_file = 'bookscout.sql'  # Input SQL file containing the binary data
 output_file = 'fixedbookscout.sql'  # Output file to save the modified content
 
