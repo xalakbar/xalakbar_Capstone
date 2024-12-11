@@ -1,18 +1,14 @@
 import re
 
-def process_binary_data(file_path, output_path):
-    with open(file_path, 'r') as file:
-        sql_content = file.read()
+def convert_binary_data(match):
+    return '0x' + match.group(1).replace("'", "")
 
-    processed_content = re.sub(r"X'([0-9A-Fa-f]+)'", r"0x\1", sql_content)
+with open('input.sql', 'r', encoding='utf-8') as infile:
+    content = infile.read()
 
-    with open(output_path, 'w') as output_file:
-        output_file.write(processed_content)
+content = re.sub(r"X'([0-9A-Fa-f]+)'", convert_binary_data, content)
 
+with open('fixedbookscout.sql', 'w', encoding='utf-8') as outfile:
+    outfile.write(content)
 
-input_file = 'bookscout.sql'
-output_file = 'fixedbookscout.sql'
-
-process_binary_data(input_file, output_file)
-
-print (f"Processed SQL file saved as {output_file}.")
+print("Conversion complete.")
