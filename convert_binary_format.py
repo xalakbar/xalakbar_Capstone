@@ -13,8 +13,8 @@ def process_binary_data(file_path, output_path):
         output_file.write(processed_content)
 
 # Example usage:
-input_file = 'bookscout.sql'  # Input SQL file containing the binary data
-output_file = 'fixedbookscout.sql'  # Output file to save the modified content
+input_file = 'dirtybookscout.sql'  # Input SQL file containing the binary data
+output_file = 'bookscout.sql'  # Output file to save the modified content
 
 process_binary_data(input_file, output_file)
 
