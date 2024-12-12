@@ -12,10 +12,16 @@ def process_binary_data(file_path, output_path):
     with open(output_path, 'w', encoding='utf-16') as output_file:
         output_file.write(processed_content)
 
-# Example usage:
-input_file = 'dirtybookscout.sql'  # Input SQL file containing the binary data
-output_file = 'bookscout.sql'  # Output file to save the modified content
+    print(f"Processed SQL file saved as {output_path}")
+
+
+def process_user_data(content):
+    # Use regex to match and modify the INSERT INTO users statement
+    content = re.sub(r"INSERT INTO users VALUES\((\d+),\s*'([^']+)',\s*'([^']+)'\);", 
+                     r"INSERT INTO users VALUES('\2', '\3');", content)
+    return content
+
+input_file = 'dirtybookscout.sql' 
+output_file = 'bookscout.sql' 
 
 process_binary_data(input_file, output_file)
-
-print(f"Processed SQL file saved as {output_file}")
