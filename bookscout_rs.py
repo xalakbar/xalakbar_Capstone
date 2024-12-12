@@ -104,9 +104,9 @@ def insert_users_from_df(df):
 
         uid_mapping[username.lower()] = user_id # Map username to user_id
 
-        conn.commit()
-        conn.close()
-        return uid_mapping
+    conn.commit()
+    conn.close()
+    return uid_mapping
 
 
 def insert_ratings_from_df(df, uid_mapping):
