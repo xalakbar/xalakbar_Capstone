@@ -30,6 +30,7 @@ def setup_database():
     
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
         username TEXT NOT NULL,
         pass_hash TEXT NOT NULL
     );
