@@ -6,12 +6,13 @@ import pandas as pd
 import numpy as np
 import hnswlib
 import nltk
+import pyodbc
 import streamlit as st
 from nltk.sentiment import SentimentIntensityAnalyzer
 from surprise import Dataset, Reader, SVD
 from surprise.model_selection import train_test_split
 
-
+# Initially used SQLite3 for db; Moved over to Azure SQL database. 
 def setup_database():
     conn = sqlite3.connect('bookscout.db')
     cursor = conn.cursor()
@@ -39,22 +40,22 @@ def setup_database():
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS ratings (
         rating INTEGER,
-        user_id INTEGER,
+        username TEXT NOT NULL,
         work_id INTEGER,
-        UNIQUE(user_id, work_id),
-        FOREIGN KEY (user_id) REFERENCES users(user_id),
+        UNIQUE(username, work_id),
+        FOREIGN KEY (username) REFERENCES users(username),
         FOREIGN KEY (work_id) REFERENCES books(work_id)
     );
     ''')
         
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS reviews (
-        user_id INTEGER,
+        username INTEGER,
         work_id INTEGER,
         review_txt TEXT,
         review_date DATETIME,
         sentiment_score REAL,
-        FOREIGN KEY (user_id) REFERENCES users(user_id),
+        FOREIGN KEY (username) REFERENCES users(username),
         FOREIGN KEY (work_id) REFERENCES books(work_id)
     );
     ''')
@@ -113,15 +114,14 @@ def insert_ratings_from_df(df, uid_mapping):
 
     for _, row in df.iterrows():
         username = row['username']
-        user_id = uid_mapping.get(username.lower())
 
-        if user_id is not None:
+        if username is not None:
             work_id = row['work_id']
             rating = row['rating']
             
             cursor.execute('''
-            INSERT OR REPLACE INTO ratings (user_id, work_id, rating) VALUES (?, ?, ?)
-            ''', (user_id, work_id, rating))
+            INSERT OR REPLACE INTO ratings (rating, username, work_id) VALUES (?, ?, ?)
+            ''', (rating, username, work_id))
 
     conn.commit()
     conn.close()
@@ -140,14 +140,24 @@ def initialize_nltk():
         nltk.download('vader_lexicon')
 
 
+# Connection string for Azure SQL database
+connection_string = (
+    "Driver={ODBC Driver 17 for SQL Server};"
+    "Server=bookscoutrs-server.database.windows.net;"
+    "Database=bookscoutrs;"
+    "Uid=bookscoutrs_admin;"
+    "Pwd=Alohabooks24;"
+)
+
+
 # Collaborative filtering (CF) data retrieval
 def get_cf_data():
-    conn = sqlite3.connect('bookscout.db')
+    conn = pyodbc.connect(connection_string)
     query = '''
-        SELECT r.user_id, r.work_id, r.rating, 
+        SELECT r.rating, r.username, r.work_id, 
                COALESCE(rv.sentiment_score, 0) AS sentiment_score
         FROM ratings r
-        LEFT JOIN reviews rv ON r.user_id = rv.user_id AND r.work_id = rv.work_id
+        LEFT JOIN reviews rv ON r.username = rv.username AND r.work_id = rv.work_id
     '''
     ratings_df = pd.read_sql_query(query, conn)
     conn.close()
@@ -158,7 +168,7 @@ def get_cf_data():
 # Prepare data for Surprise library
 def prepare_cf_data(ratings_df):
     reader = Reader(rating_scale=(1, 5))
-    data = Dataset.load_from_df(ratings_df[['user_id', 'work_id', 'rating']], reader)
+    data = Dataset.load_from_df(ratings_df[['rating', 'username', 'work_id']], reader)
 
     return data
 
@@ -186,19 +196,19 @@ def train_svd(data):
     return svd
 
 
-def get_cf_recommendations(user_id):
+def get_cf_recommendations(username):
     ratings_df = get_cf_data()
     data = prepare_cf_data(ratings_df)
     model = train_svd(data)
     
     all_books = ratings_df['work_id'].unique()
-    rated_books = ratings_df[(ratings_df['user_id'] == user_id) & (ratings_df['rating'] > 0)]['work_id']
+    rated_books = ratings_df[(ratings_df['username'] == username) & (ratings_df['rating'] > 0)]['work_id']
     predictions = []
     
     for book in all_books:
         if book not in rated_books:
             # Predict ratings using SVD model
-            pred = model.predict(user_id, book)
+            pred = model.predict(username, book)
             predictions.append((book, pred.est))
     
     # Sort predictions by the highest predicted rating
@@ -210,7 +220,7 @@ def get_cf_recommendations(user_id):
 
 # Content-based filtering (CB) data retrieval
 def get_cb_data():
-    conn = sqlite3.connect('bookscout.db')
+    conn = pyodbc.connect(connection_string)
     books_df = pd.read_sql_query('SELECT work_id, title, author, description, desc_emb, image_url FROM books', conn)
     conn.close()
 
@@ -289,9 +299,9 @@ def get_cb_recommendations(work_id):
 
 
 # Hybrid recommendations
-def get_hy_recommendations(user_id, work_id):
+def get_hy_recommendations(username, work_id):
     # Collaborative filtering recommendations
-    cf_recommendations = get_cf_recommendations(user_id)
+    cf_recommendations = get_cf_recommendations(username)
     cf_df = pd.DataFrame(cf_recommendations, columns=['work_id', 'predicted_rating'])
     
     # Content-based filtering recommendations 
@@ -300,8 +310,8 @@ def get_hy_recommendations(user_id, work_id):
     cb_df['predicted_rating'] = cb_df.get('similarity_score', 1.0)
 
     # Existing rating and sentiment
-    existing_rating = get_existing_rating(user_id, work_id)
-    existing_sentiment = get_existing_sentiment(user_id, work_id)
+    existing_rating = get_existing_rating(username, work_id)
+    existing_sentiment = get_existing_sentiment(username, work_id)
 
     # Set initial weights (neutral)
     cf_weight = 0.5
@@ -365,7 +375,7 @@ def hash_password(password):
 
 
 def get_uid(username):
-    conn = sqlite3.connect('bookscout.db')
+    conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
     cursor.execute("SELECT user_id FROM users WHERE LOWER(username) = LOWER(?)", (username,))
     user_id = cursor.fetchone()
@@ -375,7 +385,7 @@ def get_uid(username):
 
 
 def insert_user(username, password):
-    conn = sqlite3.connect('bookscout.db')
+    conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
 
     username = username.lower()
@@ -400,7 +410,7 @@ def insert_user(username, password):
 
 
 def check_credentials(username, password):
-    conn = sqlite3.connect('bookscout.db')
+    conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
 
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(?) AND pass_hash=?",
@@ -412,7 +422,7 @@ def check_credentials(username, password):
     
 
 def get_goodbooks():
-    conn = sqlite3.connect('bookscout.db')
+    conn = pyodbc.connect(connection_string)
     query = "SELECT work_id, title, author, description, image_url FROM books;"
     goodbooks = pd.read_sql(query, conn)
     conn.close()
@@ -420,70 +430,70 @@ def get_goodbooks():
     return goodbooks
 
 
-def get_existing_rating(user_id, work_id):
-    conn = sqlite3.connect('bookscout.db')
+def get_existing_rating(username, work_id):
+    conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT rating FROM ratings WHERE user_id = ? AND work_id = ?
-    ''', (user_id, work_id))
+        SELECT rating FROM ratings WHERE username = ? AND work_id = ?
+    ''', (username, work_id))
     exisiting_rating = cursor.fetchone()
     conn.close()
     
     return exisiting_rating[0] if exisiting_rating else None
 
 
-def get_existing_sentiment(user_id, work_id):
-    conn = sqlite3.connect('bookscout.db')
+def get_existing_sentiment(username, work_id):
+    conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT sentiment_score FROM reviews WHERE user_id = ? AND work_id = ?
-    ''', (user_id, work_id))
+        SELECT sentiment_score FROM reviews WHERE username = ? AND work_id = ?
+    ''', (username, work_id))
     sentiment = cursor.fetchone()
     conn.close()
 
     return sentiment[0] if sentiment else None
 
-def get_user_review(user_id, work_id):
-    conn = sqlite3.connect('bookscout.db')
+def get_user_review(username, work_id):
+    conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT review_txt FROM reviews WHERE user_id = ? AND work_id = ?
-    ''', (user_id, work_id))
+        SELECT review_txt FROM reviews WHERE username = ? AND work_id = ?
+    ''', (username, work_id))
     existing_review = cursor.fetchone()
     conn.close()
 
     return existing_review[0] if existing_review else None
 
 
-def save_rating(user_id, work_id, rating):
-    conn = sqlite3.connect('bookscout.db')
+def save_rating(rating, username, work_id):
+    conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT OR REPLACE INTO ratings (user_id, work_id, rating) VALUES (?, ?, ?)
-    ''', (user_id, work_id, rating))
+        INSERT OR REPLACE INTO ratings (rating, username, work_id) VALUES (?, ?, ?)
+    ''', (rating, username, work_id))
     conn.commit()
     conn.close()
 
 
-def save_review(user_id, work_id, review_text):
+def save_review(username, work_id, review_text):
     sentiment_score = analyze_sentiment_vader(review_text)
-    conn = sqlite3.connect('bookscout.db')
+    conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
     if review_text.strip(): 
         review_date = pd.to_datetime("now", utc=True)
         review_date_str = review_date.strftime('%Y-%m-%d')
         cursor.execute('''
-            INSERT OR REPLACE INTO reviews (user_id, work_id, review_txt, review_date, sentiment_score) VALUES (?, ?, ?, ?, ?)
-        ''', (user_id, work_id, review_text, review_date_str, sentiment_score))
+            INSERT OR REPLACE INTO reviews (username, work_id, review_txt, review_date, sentiment_score) VALUES (?, ?, ?, ?, ?)
+        ''', (username, work_id, review_text, review_date_str, sentiment_score))
     conn.commit()
     conn.close()
 
 def get_all_reviews(work_id):
-    conn = sqlite3.connect('bookscout.db')
+    conn = pyodbc.connect(connection_string)
     query = '''
         SELECT r.review_txt, u.username, r.review_date 
         FROM reviews r 
-        JOIN users u ON r.user_id = u.user_id
+        JOIN users u ON r.username = u.username
         WHERE r.work_id = ? 
         ORDER BY r.review_date DESC
     '''
@@ -492,7 +502,7 @@ def get_all_reviews(work_id):
     return reviews_df
 
 def get_top_rated_books_from_db():
-    conn = sqlite3.connect('bookscout.db')
+    conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
     cursor.execute('''
         SELECT b.work_id, b.title, b.author, b.image_url, AVG(r.rating) as avg_rating
