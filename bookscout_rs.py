@@ -30,7 +30,6 @@ def setup_database():
     
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
         username TEXT NOT NULL,
         pass_hash TEXT NOT NULL
     );
@@ -38,7 +37,6 @@ def setup_database():
     
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS ratings (
-        rating_id INTEGER PRIMARY KEY,
         rating INTEGER,
         user_id INTEGER,
         work_id INTEGER,
@@ -50,7 +48,6 @@ def setup_database():
         
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS reviews (
-        review_id INTEGER PRIMARY KEY,
         user_id INTEGER,
         work_id INTEGER,
         review_txt TEXT,
