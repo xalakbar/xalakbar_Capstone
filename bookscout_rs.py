@@ -11,6 +11,7 @@ import streamlit as st
 from nltk.sentiment import SentimentIntensityAnalyzer
 from surprise import Dataset, Reader, SVD
 from surprise.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
 
 # Initially used SQLite3 for db; Moved over to Azure SQL database. 
 def setup_database():
@@ -218,6 +219,38 @@ def get_cf_recommendations(username):
     return top_cf_recommendations
 
 
+def load_rfr():
+    try:
+        with open('rfr.pkl', 'rb') as f:
+            return pickle.load(f)
+    except FileNotFoundError:
+        return None
+    
+
+def train_rfr():
+    rfr = load_rfr()
+    
+    if rfr:
+        return rfr
+    
+    ratings_df = get_cf_data()
+    books_df = get_cb_data()
+
+    rank_df = ratings_df.merge(books_df, on='work_id', how='left')
+    X = rank_df[['sentiment_score', 'desc_emb']]
+    y = rank_df['rating']
+
+    rfr = RandomForestRegressor(max_depth=None, min_samples_leaf=1,
+                           min_samples_split=2, n_estimators=50,
+                           random_state=42)
+    rfr.fit(X, y)
+
+    with open('rfr.pkl', 'wb') as f:
+        pickle.dump(rfr,f)
+    
+    return rfr, rank_df
+
+
 # Content-based filtering (CB) data retrieval
 def get_cb_data():
     conn = pyodbc.connect(connection_string)
@@ -250,12 +283,14 @@ def load_embeddings(books_df):
     return np.array(embeddings_float, dtype=np.float32)
 
 
-def get_cb_recommendations(work_id):
+def get_cb_recommendations(work_id, username):
     books_df = get_cb_data()
     embeddings_float = load_embeddings(books_df)
     
     if embeddings_float.size == 0:
         raise ValueError("No valid embeddings found.")
+    
+    rfr, rank_df = train_rfr()
     
     # Initialize hnswlib index
     dim = embeddings_float.shape[1]
@@ -295,7 +330,45 @@ def get_cb_recommendations(work_id):
     # Sort recommendations by similarity score
     top_cb_recommendations = top_cb_recommendations.sort_values(by='similarity_score', ascending=False)[:30]
 
-    return top_cb_recommendations
+    # Prepare RFR predictions (rating-based)
+    all_books = books_df['work_id'].unique()
+    rated_books = get_cf_data()[(get_cf_data()['username'] == username) & (get_cf_data()['rating'] > 0)]['work_id']
+    rfr_predictions = []
+
+    # Predict ratings for all books using RFR
+    for book in all_books:
+        if book not in rated_books and book != work_id:
+            # Extract the features for the current book from rank_df
+            book_features = rank_df[rank_df['work_id'] == book][['sentiment_score', 'desc_emb']].values
+            predicted_rating = rfr.predict(book_features)
+            rfr_predictions.append((book, predicted_rating[0]))
+
+    # Sort the RFR predictions by the highest predicted rating
+    rfr_predictions.sort(key=lambda x: x[1], reverse=True)
+    
+    # Fetch top RFR recommendations (based on predicted rating)
+    top_rfr_recommendations = rfr_predictions[:10]
+
+    # Convert RFR recommendations to DataFrame
+    top_rfr_recommendations_df = books_df[books_df['work_id'].isin([rec[0] for rec in top_rfr_recommendations])]
+    top_rfr_recommendations_df['predicted_rating'] = [rec[1] for rec in top_rfr_recommendations]
+
+    # Merge the top RFR and top CB recommendations based on work_id
+    top_recommendations_df = pd.concat([
+        top_cb_recommendations.rename(columns={'similarity_score': 'score'}),
+        top_rfr_recommendations_df[['work_id', 'predicted_rating']]
+    ], axis=1)
+
+    # Final ranking by combining similarity score (CB) and predicted rating (RFR)
+    top_recommendations_df['final_score'] = top_recommendations_df['score'] * 0.5 + top_recommendations_df['predicted_rating'] * 0.5
+    
+    # Sort recommendations by final score and select top 10
+    final_cb_recommendations = top_recommendations_df.sort_values(by='final_score', ascending=False).head(10)
+
+    # Add book details to the final recommendations
+    final_cb_recommendations = final_cb_recommendations.merge(books_df[['work_id', 'title', 'author', 'description', 'image_url']], on='work_id', how='left')
+    
+    return final_cb_recommendations[['work_id', 'title', 'author', 'description', 'image_url', 'final_score']]
 
 
 # Hybrid recommendations
@@ -305,7 +378,7 @@ def get_hy_recommendations(username, work_id):
     cf_df = pd.DataFrame(cf_recommendations, columns=['work_id', 'predicted_rating'])
     
     # Content-based filtering recommendations 
-    cb_recommendations = get_cb_recommendations(work_id)
+    cb_recommendations = get_cb_recommendations(work_id, username)
     cb_df = cb_recommendations.copy()
     cb_df['predicted_rating'] = cb_df.get('similarity_score', 1.0)
 
