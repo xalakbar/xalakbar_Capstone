@@ -148,6 +148,7 @@ connection_string = (
     "Database=bookscoutrs;"
     "Uid=bookscoutrs_admin;"
     "Pwd=Alohabooks24;"
+    "Timeout=30;"
 )
 
 
@@ -473,10 +474,14 @@ def insert_user(username, password):
 
         cursor.execute("INSERT INTO users (username, pass_hash) VALUES (?, ?)",
                        (username, password_hash))
+
+        cursor.lexecute("SELECT SCOPE_IDENTITY()")
+        user_id = cursor.fetchone()[0]
+
         conn.commit()
 
-        return cursor.lastrowid
-    except sqlite3.IntegrityError:
+        return user_id
+    except pyodbc.IntegrityError:
         return False
     finally:
         conn.close()
