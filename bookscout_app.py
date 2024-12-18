@@ -184,9 +184,12 @@ def homepage():
             st.write(f"⭐ {book_rating} Rating")
 
 def main():
-    st.title("BookScout")
+    main_logo = 'bookscout_logo.png'
+    icon_logo = 'bookscout_icon.png'
+    st.logo(main_logo, size='large')
 
     if 'logged_in' in st.session_state and st.session_state['logged_in']:
+        st.logo(main_logo, size='large', icon_image=icon_logo)
         st.sidebar.title("Welcome to BookScout!")
         if 'username' in st.session_state:
             st.sidebar.header(f"Hello, {st.session_state['username']}!")
