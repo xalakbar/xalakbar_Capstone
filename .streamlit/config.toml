@@ -1,0 +1,14 @@
+[theme]
+base="dark"
+primaryColor="#a3a9fc"
+backgroundColor="#202239"
+secondaryBackgroundColor="#4c4c61"
+
+[server]
+headless = false
+enableCORS = true
+
+[client]
+toolbarMode = "developer"  # This hides the settings menu
+
+
