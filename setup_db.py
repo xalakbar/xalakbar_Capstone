@@ -104,9 +104,11 @@ goodbooks['desc_emb'] = goodbooks['desc_emb'].apply(filter_description)
 nltk.download('punkt')
 goodbooks['desc_emb'] = goodbooks['desc_emb'].apply(word_tokenize)
 
+# Load transfer learning model
 w2v_path = gdl.load("word2vec-google-news-300", return_path=True)
 w2v_model = KeyedVectors.load_word2vec_format(w2v_path, binary=True)
 
+# Create embeddings
 def get_average_embedding(text, model):
     if not text:
         return np.zeros(model.vector_size)
@@ -120,6 +122,8 @@ flat_embeddings = pd.DataFrame(goodbooks['desc_emb'].tolist())
 scaler = StandardScaler()
 scaled_embeddings = scaler.fit_transform(flat_embeddings)
 goodbooks['scaled_desc_emb'] = list(scaled_embeddings)
+# Later saved as bytes and renamed ['desc_emb'] in SQL database.
+# See insert_books_from_df()
 
 # Add usernames col
 userid_to_username = {}
