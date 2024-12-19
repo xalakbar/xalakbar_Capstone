@@ -1,5 +1,7 @@
 import time
 import streamlit as st
+import pandas as pd
+import plotly.express as px
 from bookscout_rs import(
     insert_user,
     check_credentials, 
@@ -10,13 +12,23 @@ from bookscout_rs import(
     save_rating,
     get_all_reviews,
     save_review,
-    get_top_rated_books
+    get_top_rated_books,
+    get_cf_data,
+    get_user_rating_count,
+    get_user_review_count
 )
 
 
 @st.cache_data  # Cache the goodbooks data to avoid repeated calls to the database
 def get_goodbooks_cached():
-    return get_goodbooks()
+    # If goodbooks is already available in session, use it.
+    if 'goodbooks' in st.session_state:
+        return st.session_state['goodbooks']
+    
+    # Otherwise, fetch the goodbooks data.
+    goodbooks = get_goodbooks()
+    st.session_state['goodbooks'] = goodbooks  # Store in session for future use
+    return goodbooks
 
 @st.cache_data  # Cache recommendations to avoid recalculating them every time
 def get_hy_recommendations_cached(username, work_id):
@@ -179,9 +191,10 @@ def homepage():
         else:
             st.write("No reviews yet for this book.")
 
+    # Top Rated Books Section
     top_books = get_top_rated_books()
 
-    st.title("Top Rated Books")
+    st.header("Top Rated Books")
     col1, col2, col3, col4, col5 = st.columns(5)
 
     for index, row in top_books.iterrows():
@@ -195,6 +208,69 @@ def homepage():
         with [col1, col2, col3, col4, col5][col_index]:
             st.image(book_image, caption=f"{book_title} by {book_author}", use_column_width=True)
             st.write(f"{book_rating} ⭐ Rating")
+    
+    # Genre Popularity Analysis
+    if 'genres' in goodbooks.columns:
+        # Split the genres and handle cases where genres are empty
+        goodbooks['genres'] = goodbooks['genres'].str.split(',')
+        goodbooks = goodbooks.explode('genres')  # Flatten the genres into individual rows
+        goodbooks['genres'] = goodbooks['genres'].str.strip()  # Remove leading/trailing spaces
+        goodbooks = goodbooks[goodbooks['genres'] != '']  # Remove rows with empty genres
+
+        if not goodbooks.empty:
+            genre_counts = goodbooks['genres'].value_counts().reset_index(name='Count')
+            genre_counts.columns = ['genres', 'Count']  # Rename columns for clarity
+
+            # Plot the genre popularity
+            st.header('Genre Popularity')
+            fig = px.bar(genre_counts, x='genres', y='Count')
+            st.plotly_chart(fig)
+        else:
+            st.write("No genres available.")
+    else:
+        st.write("No genre information available.")
+        st.write(f"Available columns: {goodbooks.columns}") 
+
+    # Author Rating Analysis (Top 10 Authors based on Average Rating)
+    ratings_df = get_cf_data()  
+    # Add a selectbox for the user to choose between "Average Rating" or "Book Count"
+    sort_by = st.selectbox(
+        "Sort authors by:",
+        ["Average Rating", "Book Count"]
+    )
+
+    if 'author' in goodbooks.columns:
+        # Merge goodbooks with ratings data on 'work_id'
+        merged_data = pd.merge(goodbooks, ratings_df, on='work_id', how='inner')
+
+        if sort_by == "Average Rating":
+            # Group by author and calculate the average rating
+            author_avg_ratings = merged_data.groupby('author')['rating'].mean().reset_index(name='avg_rating')
+
+            # Sort by average rating (in descending order)
+            top_authors = author_avg_ratings.sort_values(by='avg_rating', ascending=False).head(10)
+
+            # Plot the top 10 authors by average rating
+            st.header('Top 10 Authors by Average Rating')
+            fig = px.bar(top_authors, x='author', y='avg_rating')
+            st.plotly_chart(fig)
+
+        elif sort_by == "Book Count":
+            # Group by author and count the number of books for each author
+            author_book_count = merged_data.groupby('author')['work_id'].count().reset_index(name='book_count')
+
+            # Sort by book count (in descending order)
+            top_authors_by_count = author_book_count.sort_values(by='book_count', ascending=False).head(10)
+
+            # Plot the top 10 authors by book count
+            st.header('Top 10 Authors by Book Count')
+            fig = px.bar(top_authors_by_count, x='author', y='book_count')
+            st.plotly_chart(fig)
+
+    else:
+        st.write("No author information available.")
+        st.write(f"Available columns: {goodbooks.columns}")
+
 
 def main():
     main_logo = 'bookscout_logo.png'
@@ -203,10 +279,69 @@ def main():
 
     if 'logged_in' in st.session_state and st.session_state['logged_in']:
         st.logo(main_logo, size='large', icon_image=icon_logo)
-        st.sidebar.title("Welcome to BookScout!")
-        if 'username' in st.session_state:
-            st.sidebar.header(f"Hello, {st.session_state['username']}!")
 
+        if 'username' in st.session_state:
+            st.sidebar.title(f"Hello, {st.session_state['username']}!:wave:")
+            
+            st.sidebar.markdown(
+                """
+                <style>
+                    .center-text {
+                        text-align: center;
+                    }
+                </style>
+                <div class="center-text">
+                    <em><br>Discover your next great read,<br> one click at a time...<br><br><br></em>
+                </div>
+                """, unsafe_allow_html=True
+            )
+       
+            username = st.session_state['username']
+            rated_books_count = get_user_rating_count(username)
+            review_count = get_user_review_count(username)
+
+            st.sidebar.header("User Activity", divider='grey')
+            # Display the counts in the sidebar
+            st.sidebar.write(f"- You've rated {rated_books_count} books.:books:")
+            st.sidebar.write(f"- You've left {review_count} reviews.:writing_hand:")
+
+            data = {
+                'Category': ['Books Rated', 'Reviews Left'],
+                'Count': [rated_books_count, review_count]
+            }
+            df = pd.DataFrame(data)
+
+            # Plot the bar chart
+            fig = px.bar(df, x='Category', y='Count', color='Category')
+            st.sidebar.plotly_chart(fig, use_container_width=True)  # Display the chart on the main page
+
+        st.sidebar.markdown('<div class="spacer"><br></div>', unsafe_allow_html=True)
+        st.sidebar.markdown(
+            """
+            ## About BookScout 📚
+            **BookScout** is your personalized book discovery tool designed to help you find your next great read. 
+            
+            Whether you're an avid reader or just getting started, BookScout offers book recommendations based on ratings, reviews, and popular genres to make your search easier and more enjoyable.
+
+            ### Features:
+            - **Find Top Rated Books**: Browse books based on user ratings and reviews.
+            - **Track Your Reading Activity**: Keep track of your rated books and reviews.
+            - **Personalized Recommendations**: Get suggestions based on your reading habits.
+
+            ### Contact:
+            Have feedback or suggestions? Reach us at:
+            - Email: [support@bookscout.com](mailto:support@bookscout.com)
+            - Twitter: [@BookScoutApp](https://twitter.com/BookScoutApp)
+            - Instagram: [@BookScout](https://instagram.com/BookScout)
+
+            ### How It Works:
+            1. **Sign Up**: Create an account and start rating books.
+            2. **Get Recommendations**: Based on your ratings, receive personalized book suggestions.
+            3. **Track Progress**: View your reading stats, books rated, and reviews left.
+            """, unsafe_allow_html=True)
+        
+        st.sidebar.markdown('<div class="spacer"><br><br><br></div>', unsafe_allow_html=True)
+        # Logout Functionality
         if st.sidebar.button("Logout"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]

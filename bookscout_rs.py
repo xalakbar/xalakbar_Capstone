@@ -538,9 +538,13 @@ def check_credentials(username, password):
 
 def get_goodbooks():
     conn = pyodbc.connect(connection_string)
-    query = "SELECT work_id, title, author, description, image_url FROM books;"
+    query = "SELECT work_id, title, author, description, genres, image_url FROM books;"
     goodbooks = pd.read_sql(query, conn)
     conn.close()
+
+    # Ensure 'genres' is treated as a string and handle NULL values
+    goodbooks['genres'] = goodbooks['genres'].fillna('')
+    goodbooks['genres'] = goodbooks['genres'].astype(str)
 
     return goodbooks
 
@@ -695,3 +699,28 @@ def analyze_sentiment_vader(review_text):
         return 0 # Neutral sentiment for empty reviews
     sentiment = sia.polarity_scores(review_text)
     return sentiment['compound']
+
+def get_user_rating_count(username):
+    conn = pyodbc.connect(connection_string)
+    query = '''
+        SELECT COUNT(DISTINCT work_id) AS rated_books_count
+        FROM ratings
+        WHERE username = ?
+    '''
+    result = pd.read_sql(query, conn, params=(username,))
+    conn.close()
+
+    return result['rated_books_count'].iloc[0]
+
+
+def get_user_review_count(username):
+    conn = pyodbc.connect(connection_string)
+    query = '''
+        SELECT COUNT(DISTINCT work_id) AS review_count
+        FROM reviews
+        WHERE username = ?
+    '''
+    result = pd.read_sql(query, conn, params=(username,))
+    conn.close()
+
+    return result['review_count'].iloc[0]
