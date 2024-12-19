@@ -584,46 +584,70 @@ def get_user_review(username, work_id):
 def save_rating(rating, username, work_id):
     conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
+    
+    # Validate that the username is a valid string and work_id is an integer
+    if isinstance(username, str) and isinstance(work_id, int):
+        try:
+            # Insert or update the rating
+            cursor.execute('''
+                MERGE INTO ratings AS target
+                USING (SELECT ? AS username, ? AS work_id) AS source
+                ON target.username = source.username AND target.work_id = source.work_id
+                WHEN MATCHED THEN
+                    UPDATE SET rating = ?, review_date = GETDATE()
+                WHEN NOT MATCHED THEN
+                    INSERT (username, work_id, rating, review_date)
+                    VALUES (?, ?, ?, GETDATE());
+            ''', (username, work_id, rating, username, work_id, rating))
 
-        # Using MERGE to handle both insert and update in one operation
-    cursor.execute('''
-            MERGE INTO ratings AS target
-            USING (SELECT ? AS username, ? AS work_id) AS source
-            ON target.username = source.username AND target.work_id = source.work_id
-            WHEN MATCHED THEN
-                UPDATE SET rating = ?
-            WHEN NOT MATCHED THEN
-                INSERT (rating, username, work_id) VALUES (?, ?, ?);
-        ''', (username, work_id, rating, rating, username, work_id))
+            # Commit the transaction
+            conn.commit()
 
-    conn.commit()
-    conn.close()
+        except Exception as e:
+            print(f"Error during query execution: {e}")
+        
+        finally:
+            conn.close()
 
 
 def save_review(username, work_id, review_text):
     sentiment_score = analyze_sentiment_vader(review_text)
     conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
+
+    try:
+        if review_text.strip():
+            review_date = pd.to_datetime("now", utc=True).strftime('%Y-%m-%d')
+
+            # 1. Check if a review already exists for this user and work_id
+            cursor.execute("SELECT 1 FROM reviews WHERE username = ? AND work_id = ?", (username, work_id))
+            existing_review = cursor.fetchone()
+
+            if existing_review:
+                # 2. If a review exists, UPDATE it
+                cursor.execute("""
+                    UPDATE reviews
+                    SET review_txt = ?, review_date = ?, sentiment_score = ?
+                    WHERE username = ? AND work_id = ?
+                """, (review_text, review_date, sentiment_score, username, work_id))
+            else:
+                # 3. If no review exists, INSERT a new one
+                cursor.execute("""
+                    INSERT INTO reviews (username, work_id, review_txt, review_date, sentiment_score)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (username, work_id, review_text, review_date, sentiment_score))
+
+            conn.commit()
+            return True  # Indicate success
+        else:
+            return False  # Indicate failure (empty review)
+    except pyodbc.Error as ex:
+        print(f"Database Error: {ex}")
+        return False
+    finally:
+        conn.close()
+
     
-    if review_text.strip():
-        review_date = pd.to_datetime("now", utc=True)
-        review_date_str = review_date.strftime('%Y-%m-%d')
-
-        cursor.execute('''
-            MERGE INTO reviews AS target
-            USING (SELECT ? AS username, ? AS work_id) AS source
-            ON target.username = source.username AND target.work_id = source.work_id
-            WHEN MATCHED THEN
-                UPDATE SET review_txt = ?, review_date = ?, sentiment_score = ?
-            WHEN NOT MATCHED THEN
-                INSERT (username, work_id, review_txt, review_date, sentiment_score) 
-                VALUES (?, ?, ?, ?, ?);
-        ''', (username, work_id, review_text, review_date_str, sentiment_score,
-              username, work_id, review_text, review_date_str, sentiment_score))
-
-    conn.commit()
-    conn.close()
-
 def get_all_reviews(work_id):
     conn = pyodbc.connect(connection_string)
     query = '''
