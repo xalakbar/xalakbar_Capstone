@@ -144,7 +144,7 @@ def initialize_nltk():
 # Connection string for Azure SQL database
 connection_string = (
     "Driver={ODBC Driver 17 for SQL Server};"
-    "Server=bookscoutrs-server.database.windows.net;"
+    "Server=bookscoutrs-server.privatelink.database.windows.net;"
     "Database=bookscoutrs;"
     "Uid=bookscoutrs_admin;"
     "Pwd=Alohabooks24;"
