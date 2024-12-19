@@ -9,6 +9,6 @@ headless = false
 enableCORS = true
 
 [client]
-toolbarMode = "developer"  # This hides the settings menu
+toolbarMode = "minimal"  # This hides the settings menu
 
 
