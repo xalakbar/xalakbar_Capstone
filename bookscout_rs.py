@@ -223,27 +223,46 @@ def get_cf_recommendations(username):
 def load_rfr():
     try:
         with open('rfr.pkl', 'rb') as f:
-            return pickle.load(f)
+            rfr = pickle.load(f)
+
+        with open('rank_df.pkl', 'rb') as f:
+            rank_df = pickle.load(f)
+
+        return rfr, rank_df
+    
     except FileNotFoundError:
-        return None
+        return None, None
     
 
 def train_rfr():
-    rfr = load_rfr()
+    rfr, rank_df = load_rfr()
     
-    if rfr:
-        return rfr
+    if rfr is not None and rank_df is not None:
+        return rfr, rank_df
     
     ratings_df = get_cf_data()
     books_df = get_cb_data()
 
     rank_df = ratings_df.merge(books_df, on='work_id', how='left')
-    X = rank_df[['sentiment_score', 'desc_emb']]
+
+    # Load and preprocess the embeddings
+    embeddings_float = load_embeddings(books_df)
+    embeddings_float = np.array(embeddings_float)
+
+    embedding_columns = [f'embedding_float_{i}' for i in range(embeddings_float.shape[1])]
+
+    embeddings_df = pd.DataFrame(embeddings_float, columns=embedding_columns)
+
+    rank_df = rank_df.merge(embeddings_df, left_on='work_id', right_index=True, how='left')
+
+    # Determine target and features
+    X = rank_df[['sentiment_score'] + embedding_columns]
     y = rank_df['rating']
 
     rfr = RandomForestRegressor(max_depth=None, min_samples_leaf=1,
                            min_samples_split=2, n_estimators=50,
                            random_state=42)
+
     rfr.fit(X, y)
 
     with open('rfr.pkl', 'wb') as f:
@@ -264,50 +283,64 @@ def get_cb_data():
 # Load book description embeddings for CB
 def load_embeddings(books_df):
     embeddings_float = []
+    embedding_dim = None  # Store the expected embedding dimension
+    error_count = 0
 
-    for embedding_bytes in books_df['desc_emb']:
+    for i, embedding_bytes in enumerate(books_df['desc_emb']):
         if embedding_bytes is not None:
             try:
                 emb = np.frombuffer(embedding_bytes, dtype=np.float32)
+
+                if embedding_dim is None:  # Set the expected dimension
+                    embedding_dim = emb.shape[0]
+                elif emb.shape[0] != embedding_dim:  # Check for consistency
+                    print(f"Error: Inconsistent embedding length at index {i}. Expected {embedding_dim}, got {emb.shape[0]}.")
+                    error_count += 1
+                    continue  # Skip this embedding
+
                 embeddings_float.append(emb)
             except Exception as e:
-                print(f"Error converting bytes to array: {e}")
-                embeddings_float.append(None)
+                print(f"Error converting bytes to array at index {i}: {e}")
+                error_count += 1
+                continue
         else:
-            embeddings_float.append(None)
+            print(f"Error: Null embedding at index {i}.")
+            error_count += 1
+            continue
 
-    embeddings_float = [emb for emb in embeddings_float if emb is not None]
-    
+    if error_count > 0:
+        print(f"Total number of errors: {error_count}")
+
     if not embeddings_float:
         raise ValueError("No valid embeddings found.")
 
-    return np.array(embeddings_float, dtype=np.float32)
-
+    return np.stack(embeddings_float)
 
 def get_cb_recommendations(work_id, username):
     books_df = get_cb_data()
-    embeddings_float = load_embeddings(books_df)
+    all_embeddings = load_embeddings(books_df)
     
-    if embeddings_float.size == 0:
+    if all_embeddings.size == 0:
         raise ValueError("No valid embeddings found.")
     
     rfr, rank_df = train_rfr()
+
+    relevant_columns = ['sentiment_score'] + [col for col in rank_df.columns if col.startswith('embedding_float_')]
     
     # Initialize hnswlib index
-    dim = embeddings_float.shape[1]
-    num_entries = embeddings_float.shape[0]
+    dim = all_embeddings.shape[1]
+    num_entries = all_embeddings.shape[0]
     hnsw_index = hnswlib.Index(space='cosine', dim=dim)
     hnsw_index.init_index(max_elements=num_entries, ef_construction=300, M=32)
-    hnsw_index.add_items(embeddings_float, ids=np.arange(num_entries))
+    hnsw_index.add_items(all_embeddings, ids=np.arange(num_entries))
     hnsw_index.set_ef(80) # Runtime search parameter 
 
     book_index = books_df[books_df['work_id'] == work_id].index
-
     if book_index.size == 0:
         raise ValueError("No valid book index found.")
 
     # Extract embeddings for the target book and reshape for querying
-    query_embedding = embeddings_float[book_index[0]].reshape(1, -1)
+    query_embedding = all_embeddings[book_index[0]].reshape(1, -1)
 
     # Find top 10 nearest neighbors based on cosine similarity 
     labels, distances = hnsw_index.knn_query(query_embedding, k=10)
@@ -325,7 +358,6 @@ def get_cb_recommendations(work_id, username):
     top_cb_recommendations['similarity_score'] = similarities[:len(valid_labels)]
     
     # Drop duplicates and exclude selected book from recommendations 
-    top_cb_recommendations = top_cb_recommendations.drop_duplicates(subset='work_id')
     top_cb_recommendations = top_cb_recommendations[top_cb_recommendations['work_id'] != work_id]
 
     # Sort recommendations by similarity score
@@ -336,44 +368,49 @@ def get_cb_recommendations(work_id, username):
     rated_books = get_cf_data()[(get_cf_data()['username'] == username) & (get_cf_data()['rating'] > 0)]['work_id']
     rfr_predictions = []
 
-    # Predict ratings for all books using RFR
-    for book in all_books:
+   # Use pre-calculated embeddings and lookup by index
+    for i, book in enumerate(all_books): #Use the index here
         if book not in rated_books and book != work_id:
-            # Extract the features for the current book from rank_df
-            book_features = rank_df[rank_df['work_id'] == book][['sentiment_score', 'desc_emb']].values
-            predicted_rating = rfr.predict(book_features)
-            rfr_predictions.append((book, predicted_rating[0]))
+            #Use index to lookup the correct embedding from all_embeddings
+            book_embedding = all_embeddings[i].reshape(1,-1)
 
-    # Sort the RFR predictions by the highest predicted rating
-    rfr_predictions.sort(key=lambda x: x[1], reverse=True)
-    
-    # Fetch top RFR recommendations (based on predicted rating)
-    top_rfr_recommendations = rfr_predictions[:10]
+            sentiment_score = rank_df.loc[rank_df['work_id'] == book, 'sentiment_score'].iloc[0] if (rank_df['work_id'] == book).any() else 0
 
-    # Convert RFR recommendations to DataFrame
-    top_rfr_recommendations_df = books_df[books_df['work_id'].isin([rec[0] for rec in top_rfr_recommendations])]
-    top_rfr_recommendations_df['predicted_rating'] = [rec[1] for rec in top_rfr_recommendations]
+            if np.isnan(sentiment_score) or np.isinf(sentiment_score) or np.any(np.isnan(book_embedding)) or np.any(np.isinf(book_embedding)):
+                print(f"Skipping book {book} due to NaN or Inf values.")
+                continue
 
-    # Merge the top RFR and top CB recommendations based on work_id
+            book_features = np.concatenate(([sentiment_score], book_embedding[0]))
+            rfr_pred = rfr.predict(book_features.reshape(1, -1))[0]
+            rfr_predictions.append((book, rfr_pred))
+
+   # Create DataFrame and drop duplicates before merging
+    top_rfr_recommendations_df = pd.DataFrame(rfr_predictions, columns=['work_id', 'predicted_rating'])
+    top_rfr_recommendations_df.drop_duplicates(subset='work_id', inplace=True)
+
+    # Rename 'title' in top_cb_recommendations before merging
+    top_cb_recommendations.rename(columns={'title': 'title_cb', 'work_id':'work_id_cb'}, inplace=True)
+
+   # Merge the top RFR and top CB recommendations
     top_recommendations_df = pd.concat([
-        top_cb_recommendations.rename(columns={'similarity_score': 'score'}),
-        top_rfr_recommendations_df[['work_id', 'predicted_rating']]
+        top_cb_recommendations,
+        top_rfr_recommendations_df
     ], axis=1)
+    top_recommendations_df = top_recommendations_df.loc[:,~top_recommendations_df.columns.duplicated()].copy()
+    top_recommendations_df['work_id'] = top_recommendations_df['work_id_cb'].fillna(top_recommendations_df['work_id'])
+    top_recommendations_df = top_recommendations_df.drop(['work_id_cb'], axis=1)
 
-    # Final ranking by combining similarity score (CB) and predicted rating (RFR)
-    top_recommendations_df['final_score'] = top_recommendations_df['score'] * 0.5 + top_recommendations_df['predicted_rating'] * 0.5
-    
-    # Sort recommendations by final score and select top 10
+
+    # Final ranking and merging with book details
+    top_recommendations_df['final_score'] = top_recommendations_df['similarity_score'] * 0.5 + top_recommendations_df['predicted_rating'] * 0.5
     final_cb_recommendations = top_recommendations_df.sort_values(by='final_score', ascending=False).head(10)
-
-    # Add book details to the final recommendations
     final_cb_recommendations = final_cb_recommendations.merge(books_df[['work_id', 'title', 'author', 'description', 'image_url']], on='work_id', how='left')
-    
-    return final_cb_recommendations[['work_id', 'title', 'author', 'description', 'image_url', 'final_score']]
 
+    return final_cb_recommendations[['work_id', 'title', 'author', 'description', 'image_url', 'similarity_score','predicted_rating','final_score']]
 
 # Hybrid recommendations
 def get_hy_recommendations(username, work_id):
+    work_id = int(work_id)
     # Collaborative filtering recommendations
     cf_recommendations = get_cf_recommendations(username)
     cf_df = pd.DataFrame(cf_recommendations, columns=['work_id', 'predicted_rating'])
@@ -509,6 +546,7 @@ def get_goodbooks():
 
 
 def get_existing_rating(username, work_id):
+    work_id = int(work_id)
     conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
     cursor.execute('''
@@ -546,9 +584,18 @@ def get_user_review(username, work_id):
 def save_rating(rating, username, work_id):
     conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
+
+        # Using MERGE to handle both insert and update in one operation
     cursor.execute('''
-        INSERT OR REPLACE INTO ratings (rating, username, work_id) VALUES (?, ?, ?)
-    ''', (rating, username, work_id))
+            MERGE INTO ratings AS target
+            USING (SELECT ? AS username, ? AS work_id) AS source
+            ON target.username = source.username AND target.work_id = source.work_id
+            WHEN MATCHED THEN
+                UPDATE SET rating = ?
+            WHEN NOT MATCHED THEN
+                INSERT (rating, username, work_id) VALUES (?, ?, ?);
+        ''', (username, work_id, rating, rating, username, work_id))
+
     conn.commit()
     conn.close()
 
@@ -557,12 +604,23 @@ def save_review(username, work_id, review_text):
     sentiment_score = analyze_sentiment_vader(review_text)
     conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
-    if review_text.strip(): 
+    
+    if review_text.strip():
         review_date = pd.to_datetime("now", utc=True)
         review_date_str = review_date.strftime('%Y-%m-%d')
+
         cursor.execute('''
-            INSERT OR REPLACE INTO reviews (username, work_id, review_txt, review_date, sentiment_score) VALUES (?, ?, ?, ?, ?)
-        ''', (username, work_id, review_text, review_date_str, sentiment_score))
+            MERGE INTO reviews AS target
+            USING (SELECT ? AS username, ? AS work_id) AS source
+            ON target.username = source.username AND target.work_id = source.work_id
+            WHEN MATCHED THEN
+                UPDATE SET review_txt = ?, review_date = ?, sentiment_score = ?
+            WHEN NOT MATCHED THEN
+                INSERT (username, work_id, review_txt, review_date, sentiment_score) 
+                VALUES (?, ?, ?, ?, ?);
+        ''', (username, work_id, review_text, review_date_str, sentiment_score,
+              username, work_id, review_text, review_date_str, sentiment_score))
+
     conn.commit()
     conn.close()
 
@@ -583,14 +641,22 @@ def get_top_rated_books_from_db():
     conn = pyodbc.connect(connection_string)
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT b.work_id, b.title, b.author, b.image_url, AVG(r.rating) as avg_rating
+        SELECT TOP 10 b.work_id, b.title, b.author, b.image_url, AVG(r.rating) as avg_rating
         FROM books b
         JOIN ratings r ON b.work_id = r.work_id
-        GROUP BY b.work_id
+        GROUP BY b.work_id, b.title, b.author, b.image_url
         ORDER BY avg_rating DESC
-        LIMIT 10
     ''')
-    top_rated_books = pd.DataFrame(cursor.fetchall(), columns=['work_id', 'title', 'author', 'image_url', 'avg_rating'])
+
+    rows = cursor.fetchall()
+    column_names = [column[0] for column in cursor.description]
+
+    # Convert rows to a list of dictionaries
+    data = []
+    for row in rows:
+        data.append(dict(zip(column_names, row)))
+
+    top_rated_books = pd.DataFrame(data)
     conn.close()
     return top_rated_books
 

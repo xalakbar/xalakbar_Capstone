@@ -14,6 +14,15 @@ from bookscout_rs import(
 )
 
 
+@st.cache_data  # Cache the goodbooks data to avoid repeated calls to the database
+def get_goodbooks_cached():
+    return get_goodbooks()
+
+@st.cache_data  # Cache recommendations to avoid recalculating them every time
+def get_hy_recommendations_cached(username, work_id):
+    return get_hy_recommendations(username, work_id)
+
+
 def login():
     st.header("Log In")
     user_log = st.text_input("Username", key="login_username")
@@ -23,7 +32,7 @@ def login():
         if user_log and pass_log:
             if check_credentials(user_log, pass_log):
                 st.session_state['logged_in'] = True
-                st.session_state['username'] = user_log
+                st.session_state['username'] = str(user_log)
                 st.session_state['user_id'] = get_uid(user_log)
                 st.success("Login successful!")
                 time.sleep(2)
@@ -46,7 +55,7 @@ def signup():
                     user_id = insert_user(user_sig, pass_sig)
                     if user_id:
                         st.session_state['logged_in'] = True
-                        st.session_state['username'] = user_sig
+                        st.session_state['username'] = str(user_sig)
                         st.session_state['user_id'] = user_id
                         st.success("Sign-up sucessful!")
                         time.sleep(2)
@@ -60,22 +69,40 @@ def signup():
 
 
 def homepage():
-    goodbooks = get_goodbooks()
+    username = st.session_state.get('username')
+    goodbooks = get_goodbooks_cached()
     titles = goodbooks['title'].tolist()
 
-    selected_book = st.selectbox("Search or select a book", titles)
+    # Retrieve the previous selected book from session state (if any)
+    previous_selected_book = st.session_state.get('previous_selected_book', None)
+
+    # Select box for book selection
+    selected_book = st.selectbox("Search or select a book", titles, key="book_select")
+
+    # Check if the selected book has changed
+    if selected_book != previous_selected_book:
+        # Clear the recommendations if the selected book has changed
+        if 'recommendations' in st.session_state:
+            del st.session_state['recommendations']
+        st.session_state['recommendations_found'] = False
+
+        # Clear the selected book details
+        if 'selected_book' in st.session_state:
+            del st.session_state['selected_book']
+        st.session_state['selected_book_updated'] = False
+
+        # Store the selected book in session state for future comparison
+        st.session_state['previous_selected_book'] = selected_book
 
     # Button to get recommendations
     if st.button("Get Recommendations"):
-        if 'selected_book' in st.session_state:
-            del st.session_state['selected_book']
-            st.session_state['selected_book_updated'] = False
-
-        user_id = st.session_state.get('user_id')
+        # Set the session state for the selected book
         work_id = goodbooks[goodbooks['title'] == selected_book]['work_id'].values[0]
 
-        recommendations = get_hy_recommendations(user_id, work_id)
+        # Fetch new recommendations
+        recommendations = get_hy_recommendations(username, work_id)
 
+        # Update session state with the new recommendations
         if recommendations is not None and not recommendations.empty:
             st.session_state.recommendations = recommendations
             st.session_state.recommendations_found = True
@@ -83,7 +110,11 @@ def homepage():
             st.session_state.recommendations = None
             st.session_state.recommendations_found = False
 
-    if st.session_state.get('recommendations_found', False):
+        # Refresh the page to show new recommendations
+        st.rerun()
+
+    # Display recommendations if found
+    if 'recommendations_found' in st.session_state and st.session_state.get('recommendations_found', False):
         col1, col2, col3, col4, col5 = st.columns(5)
 
         for index, row in st.session_state.recommendations.iterrows():
@@ -107,19 +138,18 @@ def homepage():
                     }
                     st.session_state.selected_book_updated = True
 
-    if not st.session_state.get('recommendations_found', True):
-        st.write("Sorry, no recommendations found.")
-
+    # If no recommendations found, display a message
+    if 'recommendations_found' in st.session_state and not st.session_state.get('recommendations_found', False):
+        st.write("No recommendations yet. Click to get more!")
 
     # Display selected book details
     if 'selected_book' in st.session_state and st.session_state.get('selected_book_updated', False):
-        
         selected_book = st.session_state.selected_book
         user_id = st.session_state.get('user_id')
         work_id = selected_book['id']
 
-    # Ratings section
-        existing_rating = get_existing_rating(user_id, work_id)
+        # Ratings section
+        existing_rating = get_existing_rating(username, work_id)
 
         st.write(f"**Title:** {selected_book['title']}")
         st.write(f"**Author:** {selected_book['author']}")
@@ -135,7 +165,6 @@ def homepage():
         # Get the rating from the feedback widget
         rating = st.feedback("stars", key=f"rating_widget_{work_id}")
 
-
         if rating is not None and rating != st.session_state[rating_key]:
             adjusted_rating = rating + 1  # Adjust to match the 1-5 scale
             st.session_state[rating_key] = adjusted_rating
@@ -146,14 +175,14 @@ def homepage():
         if st.session_state[rating_key] is not None:
             st.write(f"You've rated this book {st.session_state[rating_key]} ⭐️")
 
-    # Reviews section
+        # Reviews section
         review_text = st.text_area("Leave a Review:", key=f"review_{work_id}")
 
         if st.button("Submit Review", key=f"submit_review_{work_id}"):
             if review_text:
                 save_review(user_id, work_id, review_text)
                 st.success("Review submitted successfully!")
-                st.rerun()
+                st.rerun()  # Refresh the page to reflect the new review
             else:
                 st.error("Please write something in the review field.")
 
@@ -166,6 +195,7 @@ def homepage():
         else:
             st.write("No reviews yet for this book.")
 
+    # Top Rated Books section
     top_books = get_top_rated_books()
 
     st.subheader("Top Rated Books")
@@ -180,8 +210,8 @@ def homepage():
 
         col_index = index % 5  # To make the layout responsive (5 columns)
         with [col1, col2, col3, col4, col5][col_index]:
-            st.image(book_image, caption=f"{book_title} ({book_author})", use_column_width=True)
-            st.write(f"⭐ {book_rating} Rating")
+            st.image(book_image, caption=f"{book_title} by {book_author}", use_column_width=True)
+            st.write(f"{book_rating} ⭐  Rating")
 
 def main():
     main_logo = 'bookscout_logo.png'
