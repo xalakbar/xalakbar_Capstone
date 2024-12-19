@@ -153,6 +153,7 @@ def homepage():
         st.write(f"**Author:** {selected_book['author']}")
         st.write(f"**Description:** {selected_book['description']}")
 
+        # Ratings Section
         st.write("Rate this book:")
 
         rating_key = f'rating_{work_id}'
@@ -165,12 +166,13 @@ def homepage():
         if rating is not None and rating != st.session_state[rating_key]:
             adjusted_rating = rating + 1
             st.session_state[rating_key] = adjusted_rating
-            save_rating(username, work_id, adjusted_rating)
+            save_rating(adjusted_rating, username, work_id)
             st.write(f"{adjusted_rating} ⭐️ rating saved.")
 
         if st.session_state[rating_key] is not None:
             st.write(f"You've rated this book {st.session_state[rating_key]} ⭐️")
 
+        # Reviews Section
         review_text = st.text_area("Leave a Review:", key=f"review_{work_id}")
 
         if st.button("Submit Review", key=f"submit_review_{work_id}"):

@@ -586,32 +586,57 @@ def get_user_review(username, work_id):
 
 
 def save_rating(rating, username, work_id):
-    conn = pyodbc.connect(connection_string)
-    cursor = conn.cursor()
+  # Ensure the rating is a float and work_id is an integer
+    try:
+        rating = float(rating)  # Explicitly cast rating to float
+    except ValueError:
+        print(f"Error: Rating '{rating}' is not a valid number.")
+        return
     
-    # Validate that the username is a valid string and work_id is an integer
-    if isinstance(username, str) and isinstance(work_id, int):
-        try:
-            # Insert or update the rating
-            cursor.execute('''
-                MERGE INTO ratings AS target
-                USING (SELECT ? AS username, ? AS work_id) AS source
-                ON target.username = source.username AND target.work_id = source.work_id
-                WHEN MATCHED THEN
-                    UPDATE SET rating = ?, review_date = GETDATE()
-                WHEN NOT MATCHED THEN
-                    INSERT (username, work_id, rating, review_date)
-                    VALUES (?, ?, ?, GETDATE());
-            ''', (username, work_id, rating, username, work_id, rating))
+    work_id = int(work_id)  # Explicitly cast work_id to integer
+    
+    # Print out values and types for debugging purposes
+    print(f"Username: {username} (Type: {type(username)})")
+    print(f"Rating: {rating} (Type: {type(rating)})")
+    print(f"Work ID: {work_id} (Type: {type(work_id)})")
+    
+    conn = pyodbc.connect(connection_string)  # Make sure connection string is correct
+    cursor = conn.cursor()
 
-            # Commit the transaction
-            conn.commit()
+    try:
+        # Fetch the user_id from the users table
+        cursor.execute("SELECT user_id FROM users WHERE username = ?", (username,))
+        user_id_result = cursor.fetchone()
 
-        except Exception as e:
-            print(f"Error during query execution: {e}")
+        if user_id_result is None:
+            raise ValueError(f"Username '{username}' not found in users table.")
         
-        finally:
-            conn.close()
+        user_id = user_id_result[0]
+        print(f"Found user_id: {user_id} for username: {username}")
+
+        # Prepare the SQL statement to insert the rating
+        insert_sql = '''
+            INSERT INTO ratings (rating, username, work_id, user_id)
+            VALUES (?, ?, ?, ?);
+        '''
+        
+        # Debug: Print the SQL query and parameters
+        print(f"Executing SQL: {insert_sql}")
+        print(f"Parameters: rating={rating}, username={username}, work_id={work_id}, user_id={user_id}")
+        
+        # Execute the SQL query
+        cursor.execute(insert_sql, (rating, username, work_id, user_id))
+
+        # Commit the transaction to save the changes
+        conn.commit()
+        print(f"Rating {rating} for work_id {work_id} by user {username} saved successfully.")
+
+    except Exception as e:
+        # If there's any exception, print the error message
+        print(f"Error during query execution: {e}")
+    finally:
+        # Always close the connection
+        conn.close()
 
 
 def save_review(username, work_id, review_text):
@@ -707,10 +732,13 @@ def get_user_rating_count(username):
         FROM ratings
         WHERE username = ?
     '''
-    result = pd.read_sql(query, conn, params=(username,))
+    params = (username,)
+    result = pd.read_sql_query(query, conn, params=params)
     conn.close()
 
-    return result['rated_books_count'].iloc[0]
+    # Extract the count value from the query result
+    rated_books_count = result['rated_books_count'].iloc[0]
+    return rated_books_count
 
 
 def get_user_review_count(username):
