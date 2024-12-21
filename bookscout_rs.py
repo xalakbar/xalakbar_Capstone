@@ -144,7 +144,7 @@ def initialize_nltk():
 # Connection string for Azure SQL database
 connection_string = (
     "Driver={ODBC Driver 17 for SQL Server};"
-    "Server=bookscoutrs-server.privatelink.database.windows.net;"
+    "Server=bookscoutrs-server.database.windows.net;"
     "Database=bookscoutrs;"
     "Uid=bookscoutrs_admin;"
     "Pwd=Alohabooks24;"
@@ -324,8 +324,6 @@ def get_cb_recommendations(work_id, username):
         raise ValueError("No valid embeddings found.")
     
     rfr, rank_df = train_rfr()
-
-    relevant_columns = ['sentiment_score'] + [col for col in rank_df.columns if col.startswith('embedding_float_')]
     
     # Initialize hnswlib index
     dim = all_embeddings.shape[1]
