@@ -148,7 +148,9 @@ connection_string = (
     "Database=bookscoutrs;"
     "Uid=bookscoutrs_admin;"
     "Pwd=Alohabooks24;"
-    "Timeout=30;"
+    "Timeout=60;"
+    "Encrypt=yes;"
+    "TrustServerCertificate=no;"
 )
 
 
