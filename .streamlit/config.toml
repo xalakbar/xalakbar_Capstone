@@ -5,8 +5,10 @@ backgroundColor="#202239"
 secondaryBackgroundColor="#35374c"
 
 [server]
-headless = false
-enableCORS = true
+port = 8000
+headless = true
+enableCORS = false
+address = "0.0.0.0"
 
 [client]
 toolbarMode = "minimal"  # This hides the settings menu
