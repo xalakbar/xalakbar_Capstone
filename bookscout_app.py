@@ -129,7 +129,7 @@ def homepage():
                 with [col1, col2, col3, col4, col5][col_index]:
                     st.image(book_image, caption=book_title, use_column_width=True)
                     
-                    if st.button("See Details", key=f"details_{book_work_id}"): #Button is back
+                    if st.button("See Details", key=f"details_{book_work_id}"):
                         st.session_state.selected_book = {
                             'id': book_work_id,
                             'title': book_title,
@@ -139,7 +139,7 @@ def homepage():
 
                         st.session_state.selected_book_updated = True
 
-    # If no recommendations found, display a message
+
     if 'recommendations_found' in st.session_state and not st.session_state.get('recommendations_found', False):
         st.write("No recommendations yet. Click to find some!")
 
@@ -153,7 +153,7 @@ def homepage():
         st.write(f"**Author:** {selected_book['author']}")
         st.write(f"**Description:** {selected_book['description']}")
 
-        # Ratings Section
+        # Ratings
         st.write("Rate this book:")
 
         rating_key = f'rating_{work_id}'
@@ -172,7 +172,7 @@ def homepage():
         if st.session_state[rating_key] is not None:
             st.write(f"You've rated this book {st.session_state[rating_key]} ⭐️")
 
-        # Reviews Section
+        # Reviews
         review_text = st.text_area("Leave a Review:", key=f"review_{work_id}")
 
         if st.button("Submit Review", key=f"submit_review_{work_id}"):
@@ -193,7 +193,7 @@ def homepage():
         else:
             st.write("No reviews yet for this book.")
 
-    # Top Rated Books Section
+    # Top Rated Books
     top_books = get_top_rated_books()
 
     st.header("Top Rated Books")
@@ -315,7 +315,7 @@ def main():
 
             # Plot the bar chart
             fig = px.bar(df, x='Category', y='Count', color='Category')
-            st.sidebar.plotly_chart(fig, use_container_width=True)  # Display the chart on the main page
+            st.sidebar.plotly_chart(fig, use_container_width=True)
 
         st.sidebar.markdown('<div class="spacer"><br></div>', unsafe_allow_html=True)
         st.sidebar.markdown(
