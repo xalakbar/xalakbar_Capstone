@@ -409,6 +409,7 @@ def get_cb_recommendations(work_id, username):
     return final_cb_recommendations[['work_id', 'title', 'author', 'description', 'image_url', 'similarity_score','predicted_rating','final_score']]
 
 # Hybrid recommendations
+@st.cache_data
 def get_hy_recommendations(username, work_id):
     work_id = int(work_id)
     # Collaborative filtering recommendations
