@@ -149,8 +149,6 @@ connection_string = (
     "Uid=bookscoutrs_admin;"
     "Pwd=Alohabooks24;"
     "Timeout=60;"
-    "Encrypt=yes;"
-    "TrustServerCertificate=no;"
 )
 
 
@@ -536,10 +534,10 @@ def check_credentials(username, password):
 
     return user
     
-
-def get_goodbooks():
+@st.cache_data
+def get_goodbooks(limit:100):
     conn = pyodbc.connect(connection_string)
-    query = "SELECT work_id, title, author, description, genres, image_url FROM books;"
+    query = "SELECT work_id, title, author, description, genres, image_url FROM books LIMIT {};".format(limit)
     goodbooks = pd.read_sql(query, conn)
     conn.close()
 
