@@ -19,21 +19,6 @@ from bookscout_rs import(
 )
 
 
-@st.cache_data  # Cache the goodbooks data to avoid repeated calls to the database
-def get_goodbooks_cached():
-    # If goodbooks is already available in session, use it.
-    if 'goodbooks' in st.session_state:
-        return st.session_state['goodbooks']
-    
-    # Otherwise, fetch the goodbooks data.
-    goodbooks = get_goodbooks()
-    st.session_state['goodbooks'] = goodbooks  # Store in session for future use
-    return goodbooks
-
-@st.cache_data  # Cache recommendations to avoid recalculating them every time
-def get_hy_recommendations_cached(username, work_id):
-    return get_hy_recommendations(username, work_id)
-
 
 def login():
     st.header("Log In")
@@ -81,8 +66,14 @@ def signup():
 
 
 def homepage():
+    if 'recommendations' not in st.session_state:
+        recommendations = get_hy_recommendations(username, work_id)
+        st.session_state['recommendations'] = recommendations
+    else:
+        recommendations = st.session_state['recommendations']
+
     username = st.session_state.get('username')
-    goodbooks = get_goodbooks_cached()
+    goodbooks = get_goodbooks()
     titles = goodbooks['title'].tolist()
 
     previous_selected_book = st.session_state.get('previous_selected_book', None)
