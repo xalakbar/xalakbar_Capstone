@@ -67,7 +67,7 @@ def signup():
 
 def homepage():
     username = st.session_state.get('username')
-    goodbooks = get_goodbooks()
+    goodbooks = get_goodbooks(limit=100)
     titles = goodbooks['title'].tolist()
 
     previous_selected_book = st.session_state.get('previous_selected_book', None)
