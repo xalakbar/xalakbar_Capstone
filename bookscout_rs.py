@@ -220,6 +220,11 @@ def get_cf_recommendations(username):
     return top_cf_recommendations
 
 
+# Utility to calculate a hash of the dataset to detect changes
+def calculate_data_hash(df):
+    return hashlib.md5(pd.util.hash_pandas_object(df).values).hexdigest()
+
+
 def load_rfr():
     try:
         with open('rfr.pkl', 'rb') as f:
@@ -228,18 +233,34 @@ def load_rfr():
         with open('rank_df.pkl', 'rb') as f:
             rank_df = pickle.load(f)
 
-        return rfr, rank_df
+        # Load the dataset hash to check if it has changed
+        with open('dataset_hash.pkl', 'rb') as f:
+            dataset_hash = pickle.load(f)
+
+        return rfr, rank_df, dataset_hash
     
     except FileNotFoundError:
-        return None, None
+        return None, None, None
     
 
+# Train the model only if the dataset has changed significantly
 def train_rfr():
-    rfr, rank_df = load_rfr()
+    rfr, rank_df, dataset_hash_old = load_rfr()
     
+    # If the model and rank_df exist, check if the dataset has changed
     if rfr is not None and rank_df is not None:
-        return rfr, rank_df
-    
+        # Load the current dataset
+        ratings_df = get_cf_data()
+        books_df = get_cb_data()
+
+        rank_df_new = ratings_df.merge(books_df, on='work_id', how='left')
+        current_dataset_hash = calculate_data_hash(rank_df_new)
+        
+        # If dataset hasn't changed, skip retraining
+        if current_dataset_hash == dataset_hash_old:
+            return rfr, rank_df
+        
+    # Dataset has changed or no previous model, proceed with training
     ratings_df = get_cf_data()
     books_df = get_cb_data()
 
@@ -260,13 +281,22 @@ def train_rfr():
     y = rank_df['rating']
 
     rfr = RandomForestRegressor(max_depth=None, min_samples_leaf=1,
-                           min_samples_split=2, n_estimators=50,
-                           random_state=42)
+                                min_samples_split=2, n_estimators=50,
+                                random_state=42)
 
     rfr.fit(X, y)
 
+    # Save model, rank_df, and dataset hash
     with open('rfr.pkl', 'wb') as f:
-        pickle.dump(rfr,f)
+        pickle.dump(rfr, f)
+
+    with open('rank_df.pkl', 'wb') as f:
+        pickle.dump(rank_df, f)
+    
+    # Save the new dataset hash
+    current_dataset_hash = calculate_data_hash(rank_df)
+    with open('dataset_hash.pkl', 'wb') as f:
+        pickle.dump(current_dataset_hash, f)
     
     return rfr, rank_df
 
