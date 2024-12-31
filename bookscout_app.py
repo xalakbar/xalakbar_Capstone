@@ -66,12 +66,6 @@ def signup():
 
 
 def homepage():
-    if 'recommendations' not in st.session_state:
-        recommendations = get_hy_recommendations(username, work_id)
-        st.session_state['recommendations'] = recommendations
-    else:
-        recommendations = st.session_state['recommendations']
-
     username = st.session_state.get('username')
     goodbooks = get_goodbooks()
     titles = goodbooks['title'].tolist()
