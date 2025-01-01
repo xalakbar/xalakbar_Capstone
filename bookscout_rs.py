@@ -567,7 +567,7 @@ def check_credentials(username, password):
 @st.cache_data
 def get_goodbooks(limit):
     conn = pyodbc.connect(connection_string)
-    query = "SELECT work_id, title, author, description, genres, image_url FROM books LIMIT {};".format(limit)
+    query = "SELECT TOP {limit} work_id, title, author, description, genres, image_url FROM books;"
     goodbooks = pd.read_sql(query, conn)
     conn.close()
 
