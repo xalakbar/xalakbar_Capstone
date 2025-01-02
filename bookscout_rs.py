@@ -13,6 +13,7 @@ from surprise import Dataset, Reader, SVD
 from surprise.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 
+# BEGIN SQLITE3
 # Initially used SQLite3 for db; Moved over to Azure SQL database. 
 def setup_database():
     conn = sqlite3.connect('bookscout.db')
@@ -132,6 +133,8 @@ def reset_database():
     if os.path.exists('bookscout.db'):
         os.remove('bookscout.db')
 
+# END SQLITE3
+
 
 # For sentiment analysis
 def initialize_nltk():
@@ -152,9 +155,16 @@ connection_string = (
 )
 
 
-# Collaborative filtering (CF) data retrieval
-def get_cf_data():
+@st.cache_resource
+def get_db_connection():
     conn = pyodbc.connect(connection_string)
+    return conn
+
+
+# Collaborative filtering (CF) data retrieval
+@st.cache_data
+def get_cf_data():
+    conn = get_db_connection()
     query = '''
         SELECT r.rating, r.username, r.work_id, 
                COALESCE(rv.sentiment_score, 0) AS sentiment_score
@@ -182,7 +192,7 @@ def load_svd():
     except FileNotFoundError:
         return None
 
-
+@st.cache_data
 def train_svd(data):
     svd = load_svd()
     if svd:
@@ -197,7 +207,7 @@ def train_svd(data):
 
     return svd
 
-
+@st.cache_data
 def get_cf_recommendations(username):
     ratings_df = get_cf_data()
     data = prepare_cf_data(ratings_df)
@@ -244,6 +254,7 @@ def load_rfr():
     
 
 # Train the model only if the dataset has changed significantly
+@st.cache_data
 def train_rfr():
     rfr, rank_df, dataset_hash_old = load_rfr()
     
@@ -302,8 +313,9 @@ def train_rfr():
 
 
 # Content-based filtering (CB) data retrieval
+@st.cache_data
 def get_cb_data():
-    conn = pyodbc.connect(connection_string)
+    conn = get_db_connection()
     books_df = pd.read_sql_query('SELECT work_id, title, author, description, desc_emb, image_url FROM books', conn)
     conn.close()
 
@@ -346,6 +358,8 @@ def load_embeddings(books_df):
 
     return np.stack(embeddings_float)
 
+
+@st.cache_data
 def get_cb_recommendations(work_id, username):
     books_df = get_cb_data()
     all_embeddings = load_embeddings(books_df)
@@ -514,8 +528,9 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 
+@st.cache_data
 def get_uid(username):
-    conn = pyodbc.connect(connection_string)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT user_id FROM users WHERE LOWER(username) = LOWER(?)", (username,))
     user_id = cursor.fetchone()
@@ -525,7 +540,7 @@ def get_uid(username):
 
 
 def insert_user(username, password):
-    conn = pyodbc.connect(connection_string)
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     username = username.lower()
@@ -554,7 +569,7 @@ def insert_user(username, password):
 
 
 def check_credentials(username, password):
-    conn = pyodbc.connect(connection_string)
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(?) AND pass_hash=?",
@@ -566,7 +581,7 @@ def check_credentials(username, password):
     
 @st.cache_data
 def get_goodbooks(limit):
-    conn = pyodbc.connect(connection_string)
+    conn = get_db_connection()
     query = f'SELECT TOP {limit} work_id, title, author, description, genres, image_url FROM books;'
     goodbooks = pd.read_sql(query, conn)
     conn.close()
@@ -577,10 +592,10 @@ def get_goodbooks(limit):
 
     return goodbooks
 
-
+@st.cache_data
 def get_existing_rating(username, work_id):
     work_id = int(work_id)
-    conn = pyodbc.connect(connection_string)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         SELECT rating FROM ratings WHERE username = ? AND work_id = ?
@@ -590,9 +605,9 @@ def get_existing_rating(username, work_id):
     
     return exisiting_rating[0] if exisiting_rating else None
 
-
+@st.cache_data
 def get_existing_sentiment(username, work_id):
-    conn = pyodbc.connect(connection_string)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         SELECT sentiment_score FROM reviews WHERE username = ? AND work_id = ?
@@ -602,8 +617,9 @@ def get_existing_sentiment(username, work_id):
 
     return sentiment[0] if sentiment else None
 
+@st.cache_data
 def get_user_review(username, work_id):
-    conn = pyodbc.connect(connection_string)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         SELECT review_txt FROM reviews WHERE username = ? AND work_id = ?
@@ -629,7 +645,7 @@ def save_rating(rating, username, work_id):
     print(f"Rating: {rating} (Type: {type(rating)})")
     print(f"Work ID: {work_id} (Type: {type(work_id)})")
     
-    conn = pyodbc.connect(connection_string)  # Make sure connection string is correct
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
@@ -670,7 +686,7 @@ def save_rating(rating, username, work_id):
 
 def save_review(username, work_id, review_text):
     sentiment_score = analyze_sentiment_vader(review_text)
-    conn = pyodbc.connect(connection_string)
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
@@ -705,9 +721,9 @@ def save_review(username, work_id, review_text):
     finally:
         conn.close()
 
-    
+@st.cache_data   
 def get_all_reviews(work_id):
-    conn = pyodbc.connect(connection_string)
+    conn = get_db_connection()
     query = '''
         SELECT r.review_txt, u.username, r.review_date 
         FROM reviews r 
@@ -719,8 +735,9 @@ def get_all_reviews(work_id):
     conn.close()
     return reviews_df
 
+@st.cache_data
 def get_top_rated_books_from_db():
-    conn = pyodbc.connect(connection_string)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         SELECT TOP 10 b.work_id, b.title, b.author, b.image_url, AVG(r.rating) as avg_rating
@@ -742,7 +759,6 @@ def get_top_rated_books_from_db():
     conn.close()
     return top_rated_books
 
-@st.cache_data(ttl=600)
 def get_top_rated_books():
     return get_top_rated_books_from_db()
 
@@ -754,8 +770,9 @@ def analyze_sentiment_vader(review_text):
     sentiment = sia.polarity_scores(review_text)
     return sentiment['compound']
 
+@st.cache_data
 def get_user_rating_count(username):
-    conn = pyodbc.connect(connection_string)
+    conn = get_db_connection()
     query = '''
         SELECT COUNT(DISTINCT work_id) AS rated_books_count
         FROM ratings
@@ -769,9 +786,9 @@ def get_user_rating_count(username):
     rated_books_count = result['rated_books_count'].iloc[0]
     return rated_books_count
 
-
+@st.cache_data
 def get_user_review_count(username):
-    conn = pyodbc.connect(connection_string)
+    conn = get_db_connection()
     query = '''
         SELECT COUNT(DISTINCT work_id) AS review_count
         FROM reviews
