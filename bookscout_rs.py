@@ -164,15 +164,14 @@ def get_db_connection():
 # Collaborative filtering (CF) data retrieval
 @st.cache_data
 def get_cf_data():
-    conn = get_db_connection()
     query = '''
         SELECT r.rating, r.username, r.work_id, 
                COALESCE(rv.sentiment_score, 0) AS sentiment_score
         FROM ratings r
         LEFT JOIN reviews rv ON r.username = rv.username AND r.work_id = rv.work_id
     '''
-    ratings_df = pd.read_sql_query(query, conn)
-    conn.close()
+    with get_db_connection() as conn:
+        ratings_df = pd.read_sql_query(query, conn)
 
     return ratings_df
 
@@ -315,9 +314,12 @@ def train_rfr():
 # Content-based filtering (CB) data retrieval
 @st.cache_data
 def get_cb_data():
-    conn = get_db_connection()
-    books_df = pd.read_sql_query('SELECT work_id, title, author, description, desc_emb, image_url FROM books', conn)
-    conn.close()
+    query = '''
+        SELECT work_id, title, author, description, desc_emb, image_url 
+        FROM books
+    '''
+    with get_db_connection() as conn:
+        books_df = pd.read_sql_query(query, conn)
 
     return books_df
 
@@ -530,233 +532,199 @@ def hash_password(password):
 
 @st.cache_data
 def get_uid(username):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM users WHERE LOWER(username) = LOWER(?)", (username,))
-    user_id = cursor.fetchone()
-    conn.close()
+    with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT user_id FROM users WHERE LOWER(username) = LOWER(?)", (username,))
+            user_id = cursor.fetchone()
 
     return user_id[0] if user_id else None
 
 
 def insert_user(username, password):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+       with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-    username = username.lower()
-    password_hash = hash_password(password)
-    
-    try:
-        cursor.execute("SELECT username FROM users WHERE username = ?", (username,))
-        existing_user = cursor.fetchone()
+        username = username.lower()
+        password_hash = hash_password(password)
+        
+        try:
+            cursor.execute("SELECT username FROM users WHERE username = ?", (username,))
+            existing_user = cursor.fetchone()
 
-        if existing_user:
+            if existing_user:
+                return False
+
+            cursor.execute("INSERT INTO users (username, pass_hash) VALUES (?, ?)",
+                           (username, password_hash))
+
+            cursor.execute("SELECT SCOPE_IDENTITY()")
+            user_id = cursor.fetchone()[0]
+
+            conn.commit()
+
+            return user_id
+        except pyodbc.IntegrityError:
             return False
-
-        cursor.execute("INSERT INTO users (username, pass_hash) VALUES (?, ?)",
-                       (username, password_hash))
-
-        cursor.lexecute("SELECT SCOPE_IDENTITY()")
-        user_id = cursor.fetchone()[0]
-
-        conn.commit()
-
-        return user_id
-    except pyodbc.IntegrityError:
-        return False
-    finally:
-        conn.close()
 
 
 def check_credentials(username, password):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db_connection() as conn:
+            cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(?) AND pass_hash=?",
-                   (username, hash_password(password)))
-    user = cursor.fetchone()
-    conn.close()
+            cursor.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(?) AND pass_hash=?",
+                        (username, hash_password(password)))
+            user = cursor.fetchone()
 
     return user
     
 @st.cache_data
 def get_goodbooks(limit):
-    conn = get_db_connection()
-    query = f'SELECT TOP {limit} work_id, title, author, description, genres, image_url FROM books;'
-    goodbooks = pd.read_sql(query, conn)
-    conn.close()
+     with get_db_connection() as conn:
+        query = f'SELECT TOP {limit} work_id, title, author, description, genres, image_url FROM books;'
+        goodbooks = pd.read_sql(query, conn)
 
-    # Ensure 'genres' is treated as a string and handle NULL values
-    goodbooks['genres'] = goodbooks['genres'].fillna('')
-    goodbooks['genres'] = goodbooks['genres'].astype(str)
+     # Ensure 'genres' is treated as a string and handle NULL values
+     goodbooks['genres'] = goodbooks['genres'].fillna('')
+     goodbooks['genres'] = goodbooks['genres'].astype(str)
 
-    return goodbooks
+     return goodbooks
 
 @st.cache_data
 def get_existing_rating(username, work_id):
     work_id = int(work_id)
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT rating FROM ratings WHERE username = ? AND work_id = ?
-    ''', (username, work_id))
-    exisiting_rating = cursor.fetchone()
-    conn.close()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT rating FROM ratings WHERE username = ? AND work_id = ?
+        ''', (username, work_id))
+        existing_rating = cursor.fetchone()
     
-    return exisiting_rating[0] if exisiting_rating else None
+    return existing_rating[0] if existing_rating else None
 
 @st.cache_data
 def get_existing_sentiment(username, work_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT sentiment_score FROM reviews WHERE username = ? AND work_id = ?
-    ''', (username, work_id))
-    sentiment = cursor.fetchone()
-    conn.close()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT sentiment_score FROM reviews WHERE username = ? AND work_id = ?
+        ''', (username, work_id))
+        sentiment = cursor.fetchone()
 
     return sentiment[0] if sentiment else None
 
 @st.cache_data
 def get_user_review(username, work_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT review_txt FROM reviews WHERE username = ? AND work_id = ?
-    ''', (username, work_id))
-    existing_review = cursor.fetchone()
-    conn.close()
+   with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT review_txt FROM reviews WHERE username = ? AND work_id = ?
+        ''', (username, work_id))
+        existing_review = cursor.fetchone()
 
-    return existing_review[0] if existing_review else None
+   return existing_review[0] if existing_review else None
 
 
 def save_rating(rating, username, work_id):
-  # Ensure the rating is a float and work_id is an integer
-    try:
-        rating = float(rating)  # Explicitly cast rating to float
-    except ValueError:
-        print(f"Error: Rating '{rating}' is not a valid number.")
+  try:
+        rating = float(rating)
+  except ValueError:
         return
     
-    work_id = int(work_id)  # Explicitly cast work_id to integer
+  work_id = int(work_id)
     
-    # Print out values and types for debugging purposes
-    print(f"Username: {username} (Type: {type(username)})")
-    print(f"Rating: {rating} (Type: {type(rating)})")
-    print(f"Work ID: {work_id} (Type: {type(work_id)})")
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
+  with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-    try:
-        # Fetch the user_id from the users table
-        cursor.execute("SELECT user_id FROM users WHERE username = ?", (username,))
-        user_id_result = cursor.fetchone()
+        try:
+            cursor.execute("SELECT user_id FROM users WHERE username = ?", (username,))
+            user_id_result = cursor.fetchone()
 
-        if user_id_result is None:
-            raise ValueError(f"Username '{username}' not found in users table.")
-        
-        user_id = user_id_result[0]
-        print(f"Found user_id: {user_id} for username: {username}")
+            if user_id_result is None:
+                raise ValueError(f"Username '{username}' not found in users table.")
+            
+            user_id = user_id_result[0]
 
-        # Prepare the SQL statement to insert the rating
-        insert_sql = '''
-            INSERT INTO ratings (rating, username, work_id, user_id)
-            VALUES (?, ?, ?, ?);
-        '''
-        
-        # Debug: Print the SQL query and parameters
-        print(f"Executing SQL: {insert_sql}")
-        print(f"Parameters: rating={rating}, username={username}, work_id={work_id}, user_id={user_id}")
-        
-        # Execute the SQL query
-        cursor.execute(insert_sql, (rating, username, work_id, user_id))
+            insert_sql = '''
+                INSERT INTO ratings (rating, username, work_id, user_id)
+                VALUES (?, ?, ?, ?);
+            '''
+            
+            cursor.execute(insert_sql, (rating, username, work_id, user_id))
+            conn.commit()
 
-        # Commit the transaction to save the changes
-        conn.commit()
-        print(f"Rating {rating} for work_id {work_id} by user {username} saved successfully.")
-
-    except Exception as e:
-        # If there's any exception, print the error message
-        print(f"Error during query execution: {e}")
-    finally:
-        # Always close the connection
-        conn.close()
+        except Exception as e:
+            print(f"Error during query execution: {e}")
 
 
 def save_review(username, work_id, review_text):
     sentiment_score = analyze_sentiment_vader(review_text)
-    conn = get_db_connection()
-    cursor = conn.cursor()
 
-    try:
-        if review_text.strip():
-            review_date = pd.to_datetime("now", utc=True).strftime('%Y-%m-%d')
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-            # 1. Check if a review already exists for this user and work_id
-            cursor.execute("SELECT 1 FROM reviews WHERE username = ? AND work_id = ?", (username, work_id))
-            existing_review = cursor.fetchone()
+        try:
+            if review_text.strip():
+                review_date = pd.to_datetime("now", utc=True).strftime('%Y-%m-%d')
 
-            if existing_review:
-                # 2. If a review exists, UPDATE it
-                cursor.execute("""
-                    UPDATE reviews
-                    SET review_txt = ?, review_date = ?, sentiment_score = ?
-                    WHERE username = ? AND work_id = ?
-                """, (review_text, review_date, sentiment_score, username, work_id))
+                cursor.execute("SELECT 1 FROM reviews WHERE username = ? AND work_id = ?", (username, work_id))
+                existing_review = cursor.fetchone()
+
+                if existing_review:
+                    cursor.execute("""
+                        UPDATE reviews
+                        SET review_txt = ?, review_date = ?, sentiment_score = ?
+                        WHERE username = ? AND work_id = ?
+                    """, (review_text, review_date, sentiment_score, username, work_id))
+                else:
+                    cursor.execute("""
+                        INSERT INTO reviews (username, work_id, review_txt, review_date, sentiment_score)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (username, work_id, review_text, review_date, sentiment_score))
+
+                conn.commit()
+                return True
             else:
-                # 3. If no review exists, INSERT a new one
-                cursor.execute("""
-                    INSERT INTO reviews (username, work_id, review_txt, review_date, sentiment_score)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (username, work_id, review_text, review_date, sentiment_score))
-
-            conn.commit()
-            return True  # Indicate success
-        else:
-            return False  # Indicate failure (empty review)
-    except pyodbc.Error as ex:
-        print(f"Database Error: {ex}")
-        return False
-    finally:
-        conn.close()
+                return False
+        except pyodbc.Error as ex:
+            print(f"Database Error: {ex}")
+            return False
 
 @st.cache_data   
 def get_all_reviews(work_id):
-    conn = get_db_connection()
-    query = '''
-        SELECT r.review_txt, u.username, r.review_date 
-        FROM reviews r 
-        JOIN users u ON r.username = u.username
-        WHERE r.work_id = ? 
-        ORDER BY r.review_date DESC
-    '''
-    reviews_df = pd.read_sql_query(query, conn, params=(work_id,))
-    conn.close()
+    with get_db_connection() as conn:
+        query = '''
+            SELECT r.review_txt, u.username, r.review_date 
+            FROM reviews r 
+            JOIN users u ON r.username = u.username
+            WHERE r.work_id = ? 
+            ORDER BY r.review_date DESC
+        '''
+        reviews_df = pd.read_sql_query(query, conn, params=(work_id,))
+
     return reviews_df
 
 @st.cache_data
 def get_top_rated_books_from_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT TOP 10 b.work_id, b.title, b.author, b.image_url, AVG(r.rating) as avg_rating
-        FROM books b
-        JOIN ratings r ON b.work_id = r.work_id
-        GROUP BY b.work_id, b.title, b.author, b.image_url
-        ORDER BY avg_rating DESC
-    ''')
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT TOP 10 b.work_id, b.title, b.author, b.image_url, AVG(r.rating) as avg_rating
+            FROM books b
+            JOIN ratings r ON b.work_id = r.work_id
+            GROUP BY b.work_id, b.title, b.author, b.image_url
+            ORDER BY avg_rating DESC
+        ''')
 
-    rows = cursor.fetchall()
-    column_names = [column[0] for column in cursor.description]
+        rows = cursor.fetchall()
+        column_names = [column[0] for column in cursor.description]
 
-    # Convert rows to a list of dictionaries
-    data = []
-    for row in rows:
-        data.append(dict(zip(column_names, row)))
+        # Convert rows to a list of dictionaries
+        data = []
+        for row in rows:
+            data.append(dict(zip(column_names, row)))
 
-    top_rated_books = pd.DataFrame(data)
-    conn.close()
+        top_rated_books = pd.DataFrame(data)
+
     return top_rated_books
 
 def get_top_rated_books():
@@ -772,15 +740,14 @@ def analyze_sentiment_vader(review_text):
 
 @st.cache_data
 def get_user_rating_count(username):
-    conn = get_db_connection()
-    query = '''
-        SELECT COUNT(DISTINCT work_id) AS rated_books_count
-        FROM ratings
-        WHERE username = ?
-    '''
-    params = (username,)
-    result = pd.read_sql_query(query, conn, params=params)
-    conn.close()
+    with get_db_connection() as conn:
+        query = '''
+            SELECT COUNT(DISTINCT work_id) AS rated_books_count
+            FROM ratings
+            WHERE username = ?
+        '''
+        params = (username,)
+        result = pd.read_sql_query(query, conn, params=params)
 
     # Extract the count value from the query result
     rated_books_count = result['rated_books_count'].iloc[0]
@@ -788,13 +755,13 @@ def get_user_rating_count(username):
 
 @st.cache_data
 def get_user_review_count(username):
-    conn = get_db_connection()
-    query = '''
-        SELECT COUNT(DISTINCT work_id) AS review_count
-        FROM reviews
-        WHERE username = ?
-    '''
-    result = pd.read_sql(query, conn, params=(username,))
-    conn.close()
+    with get_db_connection() as conn:
+        query = '''
+            SELECT COUNT(DISTINCT work_id) AS review_count
+            FROM reviews
+            WHERE username = ?
+        '''
+        result = pd.read_sql(query, conn, params=(username,))
 
     return result['review_count'].iloc[0]
+
