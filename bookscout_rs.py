@@ -191,7 +191,7 @@ def load_svd():
     except FileNotFoundError:
         return None
 
-@st.cache_data
+
 def train_svd(data):
     svd = load_svd()
     if svd:
@@ -253,7 +253,6 @@ def load_rfr():
     
 
 # Train the model only if the dataset has changed significantly
-@st.cache_data
 def train_rfr():
     rfr, rank_df, dataset_hash_old = load_rfr()
     
