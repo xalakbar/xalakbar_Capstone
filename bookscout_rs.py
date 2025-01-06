@@ -1,4 +1,5 @@
 import os
+import time
 import pickle
 import sqlite3
 import hashlib
@@ -144,21 +145,32 @@ def initialize_nltk():
         nltk.download('vader_lexicon')
 
 
-# Connection string for Azure SQL database
-connection_string = (
-    "Driver={ODBC Driver 17 for SQL Server};"
-    "Server=bookscoutrs-server.database.windows.net;"
-    "Database=bookscoutrs;"
-    "Uid=bookscoutrs_admin;"
-    "Pwd=Alohabooks24;"
-    "Timeout=60;"
-)
 
 
 @st.cache_resource
 def get_db_connection():
-    conn = pyodbc.connect(connection_string)
-    return conn
+# Connection string for Azure SQL database
+    connection_string = (
+        "Driver={ODBC Driver 17 for SQL Server};"
+        "Server=bookscoutrs-server.database.windows.net;"
+        "Database=bookscoutrs;"
+        "Uid=bookscoutrs_admin;"
+        "Pwd=Alohabooks24;"
+        "Timeout=60;"
+    )
+
+    retries = 3
+    for attempt in range(retries):
+            try:
+                conn = pyodbc.connect(connection_string)
+                return conn
+            except pyodbc.OperationalError as e:
+                print(f"Connection failed on attempt {attempt + 1}: {e}")
+                if attempt < retries - 1:
+                    time.sleep(5)
+                else:
+                    raise Exception("Failed to connect to the database after several attempts.")
+
 
 
 # Collaborative filtering (CF) data retrieval
