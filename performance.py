@@ -11,5 +11,5 @@ def analyze_profile(profile_file):
 
 
 if __name__ == "__main__":
-    analyze_profile('app_profile.prof')
-    analyze_profile('rs_profile.prof')
+    analyze_profile('app_data.prof')
+    analyze_profile('rs_data.prof')
