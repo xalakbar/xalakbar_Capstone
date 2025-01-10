@@ -1,15 +1,11 @@
 import time
 import streamlit as st
-
-def lazy_imports():
-    global pd, px, bookscout_rs
-    import pandas as pd
-    import plotly.express as px
-    import bookscout_rs
+import pandas as pd
+import plotly.express as px
+import bookscout_rs
 
 
 def login():
-    lazy_imports()
     st.header("Log In")
     user_log = st.text_input("Username", key="login_username")
     pass_log = st.text_input("Password", key="login_password", type='password')
@@ -30,7 +26,6 @@ def login():
 
 
 def signup():
-    lazy_imports()
     with st.expander("Sign Up", expanded=False):
         user_sig = st.text_input("Username", key="signup_username")
         pass_sig = st.text_input("Password", key="signup_password", type="password")
