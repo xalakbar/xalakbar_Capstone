@@ -1,36 +1,25 @@
 import time
 import streamlit as st
-import pandas as pd
-import plotly.express as px
-from bookscout_rs import(
-    insert_user,
-    check_credentials, 
-    get_uid,
-    get_goodbooks,
-    get_hy_recommendations,
-    get_existing_rating,
-    save_rating,
-    get_all_reviews,
-    save_review,
-    get_top_rated_books,
-    get_cf_data,
-    get_user_rating_count,
-    get_user_review_count
-)
 
+def lazy_imports():
+    global pd, px, bookscout_rs
+    import pandas as pd
+    import plotly.express as px
+    import bookscout_rs
 
 
 def login():
+    lazy_imports()
     st.header("Log In")
     user_log = st.text_input("Username", key="login_username")
     pass_log = st.text_input("Password", key="login_password", type='password')
 
     if st.button("Login"):
         if user_log and pass_log:
-            if check_credentials(user_log, pass_log):
+            if bookscout_rs.check_credentials(user_log, pass_log):
                 st.session_state['logged_in'] = True
                 st.session_state['username'] = str(user_log)
-                st.session_state['user_id'] = get_uid(user_log)
+                st.session_state['user_id'] = bookscout_rs.get_uid(user_log)
                 st.success("Login successful!")
                 time.sleep(2)
                 st.rerun()
@@ -41,6 +30,7 @@ def login():
 
 
 def signup():
+    lazy_imports()
     with st.expander("Sign Up", expanded=False):
         user_sig = st.text_input("Username", key="signup_username")
         pass_sig = st.text_input("Password", key="signup_password", type="password")
@@ -49,7 +39,7 @@ def signup():
         if st.button("Sign Up"):
             if user_sig and pass_sig and confirm_pass:
                 if pass_sig == confirm_pass:
-                    user_id = insert_user(user_sig, pass_sig)
+                    user_id = bookscout_rs.insert_user(user_sig, pass_sig)
                     if user_id:
                         st.session_state['logged_in'] = True
                         st.session_state['username'] = str(user_sig)
@@ -67,7 +57,7 @@ def signup():
 
 def homepage():
     username = st.session_state.get('username')
-    goodbooks = get_goodbooks(limit=100)
+    goodbooks = bookscout_rs.get_goodbooks(limit=100)
     titles = goodbooks['title'].tolist()
 
     previous_selected_book = st.session_state.get('previous_selected_book', None)
@@ -88,7 +78,7 @@ def homepage():
     if st.button("Get Recommendations"):
         work_id = goodbooks[goodbooks['title'] == selected_book]['work_id'].values[0]
         with st.spinner("Fetching recommendations..."):
-            recommendations = get_hy_recommendations(username, work_id)
+            recommendations = bookscout_rs.get_hy_recommendations(username, work_id)
 
         if recommendations is not None and not recommendations.empty:
             st.session_state.recommendations = recommendations
@@ -132,7 +122,7 @@ def homepage():
         selected_book = st.session_state.selected_book
         work_id = selected_book['id']
 
-        existing_rating = get_existing_rating(username, work_id)
+        existing_rating = bookscout_rs.get_existing_rating(username, work_id)
 
         st.write(f"**Title:** {selected_book['title']}")
         st.write(f"**Author:** {selected_book['author']}")
@@ -151,7 +141,7 @@ def homepage():
         if rating is not None and rating != st.session_state[rating_key]:
             adjusted_rating = rating + 1
             st.session_state[rating_key] = adjusted_rating
-            save_rating(adjusted_rating, username, work_id)
+            bookscout_rs.save_rating(adjusted_rating, username, work_id)
             st.write(f"{adjusted_rating} ⭐️ rating saved.")
 
         if st.session_state[rating_key] is not None:
@@ -162,13 +152,13 @@ def homepage():
 
         if st.button("Submit Review", key=f"submit_review_{work_id}"):
             if review_text:
-                save_review(username, work_id, review_text)
+                bookscout_rs.save_review(username, work_id, review_text)
                 st.success("Review submitted successfully!")
                 st.rerun()
             else:
                 st.error("Please write something in the review field.")
 
-        reviews_df = get_all_reviews(work_id)
+        reviews_df = bookscout_rs.get_all_reviews(work_id)
         st.header("**Reviews:**")
 
         if not reviews_df.empty:
@@ -179,7 +169,7 @@ def homepage():
             st.write("No reviews yet for this book.")
 
     # Top Rated Books
-    top_books = get_top_rated_books()
+    top_books = bookscout_rs.get_top_rated_books()
 
     st.header("Top Rated Books")
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -219,7 +209,7 @@ def homepage():
         st.write(f"Available columns: {goodbooks.columns}") 
 
     # Author Rating Analysis (Top 10 Authors based on Average Rating)
-    ratings_df = get_cf_data()  
+    ratings_df = bookscout_rs.get_cf_data()  
     # Add a selectbox for the user to choose between "Average Rating" or "Book Count"
     sort_by = st.selectbox(
         "Sort authors by:",
@@ -284,8 +274,8 @@ def main():
             )
        
             username = st.session_state['username']
-            rated_books_count = get_user_rating_count(username)
-            review_count = get_user_review_count(username)
+            rated_books_count = bookscout_rs.get_user_rating_count(username)
+            review_count = bookscout_rs.get_user_review_count(username)
 
             st.sidebar.header("User Activity", divider='grey')
             # Display the counts in the sidebar
