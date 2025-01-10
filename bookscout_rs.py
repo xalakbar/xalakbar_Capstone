@@ -1,150 +1,19 @@
-import os
 import time
 import pickle
-import sqlite3
 import hashlib
 import pandas as pd
 import numpy as np
-import hnswlib
-import nltk
 import pyodbc
 import streamlit as st
-from nltk.sentiment import SentimentIntensityAnalyzer
-from surprise import Dataset, Reader, SVD
-from surprise.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
-
-# BEGIN SQLITE3
-# Initially used SQLite3 for db; Moved over to Azure SQL database. 
-def setup_database():
-    conn = sqlite3.connect('bookscout.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS books (
-        work_id INTEGER PRIMARY KEY,
-        title TEXT,
-        author TEXT,
-        description TEXT,
-        genres TEXT,
-        desc_emb BLOB,
-        image_url TEXT
-    );
-    ''')
-    
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        username TEXT NOT NULL,
-        pass_hash TEXT NOT NULL
-    );
-    ''')
-    
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS ratings (
-        rating INTEGER,
-        username TEXT NOT NULL,
-        work_id INTEGER,
-        UNIQUE(username, work_id),
-        FOREIGN KEY (username) REFERENCES users(username),
-        FOREIGN KEY (work_id) REFERENCES books(work_id)
-    );
-    ''')
-        
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS reviews (
-        username INTEGER,
-        work_id INTEGER,
-        review_txt TEXT,
-        review_date DATETIME,
-        sentiment_score REAL,
-        FOREIGN KEY (username) REFERENCES users(username),
-        FOREIGN KEY (work_id) REFERENCES books(work_id)
-    );
-    ''')
-    
-    conn.commit()
-    conn.close()
-
-
-def insert_books_from_df(df):
-    conn = sqlite3.connect('bookscout.db')
-    cursor = conn.cursor()
-    for _, row in df.iterrows():
-        # Convert embeddings to bytes for SQLite compatability
-        embeddings = np.array(row['scaled_desc_emb']).tobytes() if 'scaled_desc_emb' in row else None
-        cursor.execute('''
-        INSERT OR IGNORE INTO books (work_id, title, author, description, genres, desc_emb, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (row['work_id'], row['title'], row['authors'], row['description'], row['genres'], embeddings, row['image_url']))
-    conn.commit()
-    conn.close()
-
-
-def insert_users_from_df(df):
-    conn = sqlite3.connect('bookscout.db')
-    cursor = conn.cursor()
-    
-    uid_mapping = {} # Dictionary to store username-to-user_id mapping
-
-    for _, row in df.iterrows():
-        username = row['username']
-        pass_hash = row['password_hash']
-
-        cursor.execute('SELECT user_id FROM users WHERE LOWER(username) = LOWER(?)', (username.lower(),))
-        existing_user = cursor.fetchone()
-
-        if existing_user:
-            user_id = existing_user[0]
-        else:
-            try:
-               cursor.execute('''
-                    INSERT INTO users (username, pass_hash) VALUES (?, ?)
-                              ''', (username.lower(), pass_hash))
-               user_id = cursor.lastrowid
-            except sqlite3.IntegrityError:
-                continue
-
-        uid_mapping[username.lower()] = user_id # Map username to user_id
-
-    conn.commit()
-    conn.close()
-    return uid_mapping
-
-
-def insert_ratings_from_df(df, uid_mapping):
-    conn = sqlite3.connect('bookscout.db')
-    cursor = conn.cursor()
-
-    for _, row in df.iterrows():
-        username = row['username']
-
-        if username is not None:
-            work_id = row['work_id']
-            rating = row['rating']
-            
-            cursor.execute('''
-            INSERT OR REPLACE INTO ratings (rating, username, work_id) VALUES (?, ?, ?)
-            ''', (rating, username, work_id))
-
-    conn.commit()
-    conn.close()
-
-
-def reset_database():
-    if os.path.exists('bookscout.db'):
-        os.remove('bookscout.db')
-
-# END SQLITE3
 
 
 # For sentiment analysis
 def initialize_nltk():
+    import nltk
     try:
         nltk.data.find('sentiment/vader_lexicon.zip')
     except LookupError:
         nltk.download('vader_lexicon')
-
-
 
 
 @st.cache_resource
@@ -176,13 +45,13 @@ def get_db_connection():
 # Collaborative filtering (CF) data retrieval
 @st.cache_data
 def get_cf_data():
-    query = '''
-        SELECT r.rating, r.username, r.work_id, 
-               COALESCE(rv.sentiment_score, 0) AS sentiment_score
-        FROM ratings r
-        LEFT JOIN reviews rv ON r.username = rv.username AND r.work_id = rv.work_id
-    '''
     with get_db_connection() as conn:
+        query = '''
+            SELECT r.rating, r.username, r.work_id, 
+                COALESCE(rv.sentiment_score, 0) AS sentiment_score
+            FROM ratings r
+            LEFT JOIN reviews rv ON r.username = rv.username AND r.work_id = rv.work_id
+        '''
         ratings_df = pd.read_sql_query(query, conn)
 
     return ratings_df
@@ -190,6 +59,7 @@ def get_cf_data():
 
 # Prepare data for Surprise library
 def prepare_cf_data(ratings_df):
+    from surprise import Dataset, Reader
     reader = Reader(rating_scale=(1, 5))
     data = Dataset.load_from_df(ratings_df[['rating', 'username', 'work_id']], reader)
 
@@ -205,10 +75,12 @@ def load_svd():
 
 
 def train_svd(data):
+    from surprise import SVD
     svd = load_svd()
     if svd:
         return svd
     
+    from surprise.model_selection import train_test_split
     trainset, testset = train_test_split(data, test_size=0.25)
     svd = SVD(n_factors=310, n_epochs=130, lr_all=0.017, reg_all=0.02, random_state=42)
     svd.fit(trainset)
@@ -266,6 +138,7 @@ def load_rfr():
 
 # Train the model only if the dataset has changed significantly
 def train_rfr():
+    from sklearn.ensemble import RandomForestRegressor
     rfr, rank_df, dataset_hash_old = load_rfr()
     
     # If the model and rank_df exist, check if the dataset has changed
@@ -325,12 +198,12 @@ def train_rfr():
 # Content-based filtering (CB) data retrieval
 @st.cache_data
 def get_cb_data():
-    query = '''
-        SELECT work_id, title, author, description, desc_emb, image_url 
-        FROM books
-    '''
     with get_db_connection() as conn:
-        books_df = pd.read_sql_query(query, conn)
+            query = '''
+                SELECT work_id, title, author, description, desc_emb, image_url 
+                FROM books
+            '''
+            books_df = pd.read_sql_query(query, conn)
 
     return books_df
 
@@ -383,6 +256,7 @@ def get_cb_recommendations(work_id, username):
     rfr, rank_df = train_rfr()
     
     # Initialize hnswlib index
+    import hnswlib
     dim = all_embeddings.shape[1]
     num_entries = all_embeddings.shape[0]
     hnsw_index = hnswlib.Index(space='cosine', dim=dim)
@@ -743,6 +617,7 @@ def get_top_rated_books():
 
 
 def analyze_sentiment_vader(review_text):
+    from nltk.sentiment import SentimentIntensityAnalyzer
     sia = SentimentIntensityAnalyzer()
     if not review_text.strip():
         return 0 # Neutral sentiment for empty reviews
