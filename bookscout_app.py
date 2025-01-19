@@ -75,7 +75,7 @@ def homepage():
         with st.spinner("Fetching recommendations..."):
             recommendations = bookscout_rs.get_hy_recommendations(username, work_id)
 
-        if recommendations is not None and not recommendations.empty:
+        if recommendations is not None:
             st.session_state.recommendations = recommendations
             st.session_state.recommendations_found = True
         else:
