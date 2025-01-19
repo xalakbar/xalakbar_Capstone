@@ -75,9 +75,15 @@ def homepage():
         with st.spinner("Fetching recommendations..."):
             recommendations = bookscout_rs.get_hy_recommendations(username, work_id)
 
-        if recommendations is not None:
-            st.session_state.recommendations = recommendations
-            st.session_state.recommendations_found = True
+        if recommendations:
+            if isinstance(recommendations, list):
+                recommendations = pd.DataFrame(recommendations)
+            if not recommendations.empty:
+                st.session_state.recommendations = recommendations
+                st.session_state.recommendations_found = True
+            else:
+                st.session_state.recommendations = None
+                st.session_state.recommendations_found = False
         else:
             st.session_state.recommendations = None
             st.session_state.recommendations_found = False
