@@ -74,6 +74,7 @@ def homepage():
         work_id = goodbooks[goodbooks['title'] == selected_book]['work_id'].values
         if len(work_id) == 0:
             st.error(f"Work ID not found for book: {selected_book}")
+            work_id = None
     else:
         work_id = work_id[0]
         with st.spinner("Fetching recommendations..."):
