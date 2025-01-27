@@ -77,23 +77,31 @@ def homepage():
             work_id = None
     else:
         work_id = work_id[0]
+    if work_id:
         with st.spinner("Fetching recommendations..."):
-            recommendations = bookscout_rs.get_hy_recommendations(username, work_id)
-            if recommendations:
-                st.write("Fetched Recommendations:", recommendations)
-                if isinstance(recommendations, list):
-                    recommendations = pd.DataFrame(recommendations)
-                if not recommendations.empty:
-                    st.session_state.recommendations = recommendations
-                    st.session_state.recommendations_found = True
+            try:
+                recommendations = bookscout_rs.get_hy_recommendations(username, work_id)
+                if recommendations:
+                    st.write("Fetched Recommendations:", recommendations)
+                    if isinstance(recommendations, list):
+                        recommendations = pd.DataFrame(recommendations)
+                    if not recommendations.empty:
+                        st.session_state.recommendations = recommendations
+                        st.session_state.recommendations_found = True
+                    else:
+                        st.error("Recommendations returned an empty DataFrame.")
+                        st.session_state.recommendations_found = False
                 else:
-                    st.error("Recommendations returned an empty DataFrame.")
+                    st.error("No recommendations returned by the recommendation system.")
                     st.session_state.recommendations_found = False
-            else:
-                st.error("No recommendations returned by the recommendation system.")
+            except Exception as e:
+                st.error(f"Error fetching recommendations: {e}")
+                st.session_state.recommendations = None
                 st.session_state.recommendations_found = False
-        st.rerun()
-
+    else:
+         st.warning("Unable to fetch recommendations. Please select another book.")
+    
+    st.rerun()
 
     if 'recommendations_found' in st.session_state and st.session_state.get('recommendations_found', False):
             col1, col2, col3, col4, col5 = st.columns(5)
