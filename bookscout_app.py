@@ -71,12 +71,15 @@ def homepage():
         st.session_state['previous_selected_book'] = selected_book
 
     if st.button("Get Recommendations"):
-        work_id = goodbooks[goodbooks['title'] == selected_book]['work_id'].values
-        if len(work_id) == 0:
+        work_id_values = goodbooks[goodbooks['title'] == selected_book]['work_id'].values
+        if len(work_id_values) == 0:
             st.error(f"Work ID not found for book: {selected_book}")
             work_id = None
+        else:
+            work_id = work_id_values[0]
     else:
-        work_id = work_id[0]
+        work_id = None
+
     if work_id:
         with st.spinner("Fetching recommendations..."):
             try:
@@ -99,7 +102,8 @@ def homepage():
                 st.session_state.recommendations = None
                 st.session_state.recommendations_found = False
     else:
-         st.warning("Unable to fetch recommendations. Please select another book.")
+        if work_id is None:
+            st.warning("Unable to fetch recommendations. Please select another book.")
     
     st.rerun()
 
