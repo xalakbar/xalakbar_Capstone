@@ -71,41 +71,18 @@ def homepage():
         st.session_state['previous_selected_book'] = selected_book
 
     if st.button("Get Recommendations"):
-        work_id_values = goodbooks[goodbooks['title'] == selected_book]['work_id'].values
-        if len(work_id_values) == 0:
-            st.error(f"Work ID not found for book: {selected_book}")
-            work_id = None
-        else:
-            work_id = work_id_values[0]
-    else:
-        work_id = None
-
-    if work_id:
+        work_id = goodbooks[goodbooks['title'] == selected_book]['work_id'].values[0]
         with st.spinner("Fetching recommendations..."):
-            try:
-                recommendations = bookscout_rs.get_hy_recommendations(username, work_id)
-                if recommendations:
-                    st.write("Fetched Recommendations:", recommendations)
-                    if isinstance(recommendations, list):
-                        recommendations = pd.DataFrame(recommendations)
-                    if not recommendations.empty:
-                        st.session_state.recommendations = recommendations
-                        st.session_state.recommendations_found = True
-                    else:
-                        st.error("Recommendations returned an empty DataFrame.")
-                        st.session_state.recommendations_found = False
-                else:
-                    st.error("No recommendations returned by the recommendation system.")
-                    st.session_state.recommendations_found = False
-            except Exception as e:
-                st.error(f"Error fetching recommendations: {e}")
-                st.session_state.recommendations = None
-                st.session_state.recommendations_found = False
-    else:
-        if work_id is None:
-            st.warning("Unable to fetch recommendations. Please select another book.")
-    
-    st.rerun()
+            recommendations = bookscout_rs.get_hy_recommendations(username, work_id)
+
+        if recommendations is not None and not recommendations.empty:
+            st.session_state.recommendations = recommendations
+            st.session_state.recommendations_found = True
+        else:
+            st.session_state.recommendations = None
+            st.session_state.recommendations_found = False
+
+        st.rerun()
 
     if 'recommendations_found' in st.session_state and st.session_state.get('recommendations_found', False):
             col1, col2, col3, col4, col5 = st.columns(5)
