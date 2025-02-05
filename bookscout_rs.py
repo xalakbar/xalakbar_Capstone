@@ -1,5 +1,5 @@
 import time
-import pickle
+import joblib
 import hashlib
 import pandas as pd
 import numpy as np
@@ -84,14 +84,14 @@ def prepare_cf_data(ratings_df):
         return data
     except Exception as e:
         logging.error(f"Error preparing collaborative filtering data: {e}")
-        return None  # Return None if there is an error
+        return None
 
 
 def load_svd():
     try:
-        with open('svd.pkl', 'rb') as f:
-            logging.info("SVD model loaded successfully.")
-            return pickle.load(f)
+        svd = joblib.load('svd.joblib')
+        logging.info("SVD model loaded successfully.")
+        return svd
     except FileNotFoundError:
         logging.info("SVD model loaded successfully.")
         return None
@@ -121,8 +121,7 @@ def train_svd(data):
         raise
 
     try:
-        with open('svd.pkl', 'wb') as f:
-            pickle.dump(svd, f)
+        joblib.dump(svd, 'svd.joblib', compress=3)
         logging.info("SVD model saved successfully.")
     except Exception as e:
         logging.error(f"Error saving SVD model: {e}")
@@ -167,20 +166,12 @@ def calculate_data_hash(df):
 
 def load_rfr():
     try:
-        with open('rfr.pkl', 'rb') as f:
-            rfr = pickle.load(f)
-
-        with open('rank_df.pkl', 'rb') as f:
-            rank_df = pickle.load(f)
-
-        # Load the dataset hash to check if it has changed
-        with open('dataset_hash.pkl', 'rb') as f:
-            dataset_hash = pickle.load(f)
-
+        rfr = joblib.load('rfr.joblib')
+        rank_df = joblib.load('rank_df.joblib')
+        dataset_hash = joblib.load('dataset_hash.joblib')
         return rfr, rank_df, dataset_hash
-    
     except FileNotFoundError:
-        logging.warning("One or more files (rfr.pkl, rank_df.pkl, dataset_hash.pkl) not found.")
+        logging.warning("One or more files (rfr.joblib, rank_df.joblib, dataset_hash.joblib) not found.")
         return None, None, None
     
 
@@ -233,20 +224,15 @@ def train_rfr():
         logging.info("Random Forest Regressor model trained successfully.")
 
         # Save model, rank_df, and dataset hash
-        with open('rfr.pkl', 'wb') as f:
-            pickle.dump(rfr, f)
+        joblib.dump(rfr, 'rfr.joblib', compress=3)
+        joblib.dump(rank_df, 'rank_df.joblib', compress=3)
 
-        with open('rank_df.pkl', 'wb') as f:
-            pickle.dump(rank_df, f)
-        
-        # Save the new dataset hash
         current_dataset_hash = calculate_data_hash(rank_df)
-        with open('dataset_hash.pkl', 'wb') as f:
-            pickle.dump(current_dataset_hash, f)
-        
+        joblib.dump(current_dataset_hash, 'dataset_hash.joblib', compress=3)
+
         logging.info("Random Forest model, rank_df, and dataset hash saved successfully.")
         return rfr, rank_df
-
+    
     except Exception as e:
             logging.error(f"Error during Random Forest training or saving: {e}")
             raise
